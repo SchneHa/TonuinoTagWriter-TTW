@@ -1,4 +1,5 @@
 // Tonuino Tag Writer (TTW)
+// Daniel Wilhelm (https://itse.homeip.net)
 //
 // Hardware: ESP8266 Dev Board
 // Arduino IDE 1.8.15
