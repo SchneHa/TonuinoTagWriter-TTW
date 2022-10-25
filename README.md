@@ -51,6 +51,7 @@ Used libraries:
 
 
 
+![TTW](https://user-images.githubusercontent.com/6528455/197866958-0fe1d69b-212d-4710-95c0-6898d25316dc.jpg)
 
-![TTW](https://user-images.githubusercontent.com/6528455/197862678-2c337651-2249-4d89-8e8a-7e707b4eb01d.jpg)
+
 
