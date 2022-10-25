@@ -6,6 +6,8 @@ You can find the TonUINO project at https://www.voss.earth
 
 Forked from Daniel Wilhelm, debugging and improvements by Hans Schneider
 
+Reading and writing tags using an implemented webserver. You can also do a firmware update OTA (over the air), edit the hostname, use a NTP server to get correct timestamps and switch between English and German language. All in a handy small device with builtin battery and charging circuit.
+
 Hardware:
 - ESP32 Dev Module
 - RFID-RC522 Reader
