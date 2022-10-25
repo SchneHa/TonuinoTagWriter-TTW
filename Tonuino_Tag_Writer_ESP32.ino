@@ -1,14 +1,21 @@
 // Tonuino Tag Writer (TTW)
 // Daniel Wilhelm
+// Hans Schneider (debugging and improvements)
 //
-// Hardware: ESP32 Dev Board
+// Hardware: ESP32 Dev Module
+// 
 // Arduino IDE 1.8.15
-// ESP8266 3.0.1
+// 
+// ESP32 2.0.1
+// 
 // WIFIManager (https://github.com/tzapu/WiFiManager)
+// 
 // ArduinoJSON 5.13.5 (6 not yet supported!)
 // 
 // Arduino Config
-// 4M (190KB SPIFFS with OTA); 240MHz; 
+// 4M (190KB SPIFFS with OTA); 240MHz;
+// 882513 Bytes (67%) of memory used, max. memory is 1310720 bytes
+// 39148 bytes (11%) of dynamic memory used by global variables, 288532 bytes remaining for local variables, max. is 327680 bytes
 //
 // ToDo
 // - NTP timezone selection
@@ -18,21 +25,20 @@
 // - byteToHexStringRange: last byte ist etwas irreführend
 // - card must be represented after each read/write
 //
-//
 // 0.1.0 First stable working version
 // 0.1.2 Bug: show right input options after read card
-//
+// 0.1.3 Ability to switch to German language in configuration 2022-02-29
 //
 // NodeMCU connection to external devices
-// RC522:
-// 3,3V <->  3,3V
-// GND  <->  GND
-// D2   <->  RST
-// D18  <->  SCK
-// D19  <->  MISO
-// D21  <->  SDA
-// D23  <->  MOSI
-// D22  <->  IRQ // Currently not used
+// ESP32 <->  RC522:
+// 3.3V  <->  3.3V
+// GND   <->  GND
+// D2    <->  RST
+// D18   <->  SCK
+// D19   <->  MISO
+// D21   <->  SDA
+// D23   <->  MOSI
+// D22   <->  IRQ // Currently not used
 
 
 // **************************************************************************
@@ -46,8 +52,11 @@
 #include <TimeLib.h>                    // https://github.com/PaulStoffregen/Time
 #include <SPI.h>
 #include <MFRC522.h>
+//#include <HTTPUpdateServer.h>
+#include <ESP32httpUpdate.h>
 
 WebServer httpServer(80);
+//HTTPUpdateServer httpUpdater;
 
 WiFiUDP Udp;                            // Needed for NTP
 unsigned int NtpLocalPort = 123;        // local port to listen for UDP packets (NTP)
@@ -55,15 +64,16 @@ unsigned int NtpLocalPort = 123;        // local port to listen for UDP packets 
 // **************************************************************************
 //  Defines
 // **************************************************************************
-#define DEBUG                           // Define for Debug output on serial interface
+#define DEBUG                           // Define for Debug output on serial interface  
 #define CLEAR_BTN               4       // GPIO4 LOW during PowerUp will clear the json config file
 #define RST_PIN                 2       // GPIO2 MFRC522
 #define SS_PIN                  21      // GPIO21 MFRC522
+#define IRQ_PIN                 22      // GPIO22 MFRC522
 
 MFRC522 mfrc522(SS_PIN, RST_PIN);  // Create MFRC522 instance
 
 const String FIRMWARE_NAME  = "TTW";
-const String VERSION        = "v0.1.2";
+const String VERSION        = "v0.1.3";
 
 
 // Number of known default keys (hard-coded)
@@ -89,6 +99,7 @@ byte dataBlock[]    = {
 };
 
 String strDataBlock = "00000000000000000000000000000000";
+
 
 
 // **************************************************************************
@@ -117,7 +128,7 @@ char host_name[20] = "";
 char ntpserver[30] = "";
 
 // NTP
-bool ntp_enabled = false;                            // Set to false to disable querying for the time
+bool ntp_enabled = true;                             // Set to false to disable querying for the time
 char poolServerName[30] = "europe.pool.ntp.org";     // default NTP Server when not configured in config.json
 char boottime[20] = "";                              // Boot Time
 const int timeZone = 1;                              // Central European Time
@@ -131,6 +142,7 @@ String htmlFooter;
 
 // Other
 bool shouldSaveConfig = false;                       // Flag for saving data
+bool de_enabled = false;                             // Set language to English
 
 
 // **************************************************************************
@@ -140,10 +152,10 @@ bool loadConfig() {
   if (SPIFFS.exists("/config.json")) {
       File configFile = SPIFFS.open("/config.json", "r");
       if (configFile) {
-        DEBUG_PRINTLN("opened config file");
+        DEBUG_PRINTLN("[0155] opened config file");
         size_t size = configFile.size();
         if (size > 1024) {
-          DEBUG_PRINTLN("Config file size is too large");
+          DEBUG_PRINTLN("[0158] Config file size is too large");
           return false;
         }
         std::unique_ptr<char[]> buf(new char[size]);            // Allocate a buffer to store contents of the file.
@@ -154,18 +166,19 @@ bool loadConfig() {
           json.printTo(Serial);
         #endif
         if (json.success()) {
-          DEBUG_PRINTLN("\nparsed json");
+          DEBUG_PRINTLN("[0169] \nparsed json");
           if (json.containsKey("hostname")) strncpy(host_name, json["hostname"], 20);
           if (json.containsKey("ntpserver")) strncpy(ntpserver, json["ntpserver"], 30);
           if (json.containsKey("ntpenabled")) ntp_enabled = json["ntpenabled"];
+          if (json.containsKey("deenabled")) de_enabled = json["deenabled"];
         }
         else {
-          DEBUG_PRINTLN("Failed to parse config file");
+          DEBUG_PRINTLN("[0176] Failed to parse config file");
           return false;
         }
       }
       else {
-        DEBUG_PRINTLN("Failed to open config file");
+        DEBUG_PRINTLN("[0181] Failed to open config file");
         return false;
       }
   }
@@ -176,9 +189,9 @@ bool loadConfig() {
 // **************************************************************************
 //  Callback notifying us of the need to save config
 // **************************************************************************
-void saveConfigCallback ()
+void saveConfigCallback()
 {
-  DEBUG_PRINTLN("Should save config");
+  DEBUG_PRINTLN("[0194] Should save config");
   shouldSaveConfig = true;
 }
 
@@ -188,9 +201,9 @@ void saveConfigCallback ()
 // **************************************************************************
 void configModeCallback (WiFiManager *myWiFiManager)
 {
-  DEBUG_PRINTLN("Entered config mode");
+  DEBUG_PRINTLN("[0204] Entered config mode");
   DEBUG_PRINTLN(WiFi.softAPIP());
-  DEBUG_PRINTLN(myWiFiManager->getConfigPortalSSID());    //if you used auto generated SSID, print it
+  DEBUG_PRINTLN(myWiFiManager->getConfigPortalSSID());    // if you used auto generated SSID, print it
 }
 
 
@@ -214,19 +227,19 @@ time_t getNtpTime()
   IPAddress ntpServerIP;                            // NTP server's ip address
 
   while (Udp.parsePacket() > 0) ;                   // Discard any previously received packets
-  DEBUG_PRINTLN("NTP: Transmit NTP Request");
+  DEBUG_PRINTLN("[0230] NTP: Transmit NTP Request");
   WiFi.hostByName(ntpserver, ntpServerIP);          // Lookup IP from Hostname
-  DEBUG_PRINT("NTP: ");
+  DEBUG_PRINT("[0232] NTP: ");
   DEBUG_PRINT(ntpserver);
-  DEBUG_PRINT(" IP: ");
+  DEBUG_PRINT(" [0234] IP: ");
   DEBUG_PRINTLN(ntpServerIP);
   sendNTPpacket(ntpServerIP);
   uint32_t beginWait = millis();
   while (millis() - beginWait < 1500) {
     int size = Udp.parsePacket();
     if (size >= NTP_PACKET_SIZE) {
-      DEBUG_PRINTLN("NTP: Receive NTP Response");
-      Udp.read(packetBuffer, NTP_PACKET_SIZE);  // read packet into the buffer
+      DEBUG_PRINTLN("[0241] NTP: Receive NTP Response");
+      Udp.read(packetBuffer, NTP_PACKET_SIZE);      // read packet into the buffer
       unsigned long secsSince1900;
       // convert four bytes starting at location 40 to a long integer
       secsSince1900 =  (unsigned long)packetBuffer[40] << 24;
@@ -236,7 +249,7 @@ time_t getNtpTime()
       return secsSince1900 - 2208988800UL + (timeZone * 60 * 60); // NTP Time - 70 Years + TimeZone Hours
     }
   }
-  DEBUG_PRINTLN("NTP: No NTP Response :-(");
+  DEBUG_PRINTLN("[0252] NTP: No NTP Response :-(");
   return 0;                                          // return 0 if unable to get the time
 }
 
@@ -264,8 +277,8 @@ void sendNTPpacket(IPAddress &address)
 // **************************************************************************
 void buildHeader()
 {
-  htmlHeader="<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Strict//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd'>\n";
-  htmlHeader+="<html xmlns='http://www.w3.org/1999/xhtml' xml:lang='en'>\n";
+  htmlHeader="<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Strict//DE' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd'>\n";
+  htmlHeader+="<html xmlns='http://www.w3.org/1999/xhtml' xml:lang='de'>\n";
   htmlHeader+="  <head>\n";
   htmlHeader+="    <meta name='viewport' content='width=device-width, initial-scale=.75' />\n";
   htmlHeader+="    <link rel='stylesheet' href='https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css' />\n";
@@ -285,7 +298,12 @@ void buildHeader()
   htmlHeader+="            <li class='active'>\n";
   htmlHeader+="              <a href='/'>MAC <span class='badge'>" + String(WiFi.macAddress()) + "</span></a></li>\n";
   htmlHeader+="            <li class='active'>\n";
-  htmlHeader+="              <a href='/config'>Configuration</a></li>\n";
+  if (de_enabled) {
+    htmlHeader+="              <a href='/config'>Konfiguration</a></li>\n";
+  }
+  else {
+    htmlHeader+="              <a href='/config'>Configuration</a></li>\n";
+  }
   htmlHeader+="            <li class='active'>\n";
   htmlHeader+="              <a href='/tonuino'>Tonuino</a></li>\n";
   htmlHeader+="            <li class='active'>\n";
@@ -303,7 +321,12 @@ void buildHeader()
 // **************************************************************************
 void buildFooter()
 {
-  htmlFooter="      <div class='row'><div class='col-md-12'><em>Tonuino Tag Writer (TTW), Current Time: "+ String(hour()) + ":" + String(minute()) + ":" + String(second()) +"</em></div></div>\n";
+  if (de_enabled) {
+    htmlFooter="      <div class='row'><div class='col-md-12'><em>Tonuino Tag Writer (TTW), Aktuelle Zeit: "+ String(hour()) + ":" + String(minute()) + ":" + String(second()) +"</em></div></div>\n";
+  }
+  else {
+    htmlFooter="      <div class='row'><div class='col-md-12'><em>Tonuino Tag Writer (TTW), Current time: "+ String(hour()) + ":" + String(minute()) + ":" + String(second()) +"</em></div></div>\n";
+  }
   htmlFooter+="    </div>\n";
   htmlFooter+="  </body>\n";
   htmlFooter+="</html>\n";
@@ -413,8 +436,14 @@ void buildJavaScript()
 // **************************************************************************
 void Handle_Reboot()
 {
-  httpServer.sendHeader("Connection", "close");
-  httpServer.send(200, "text/html", F("<body>Reboot OK, please open the <a href='/'>main page</a>.</body>"));
+  if (de_enabled) {
+    httpServer.sendHeader("Verbindung", "geschlossen");
+    httpServer.send(200, "text/html", F("<body>Neustart OK, bitte &#246;ffne die <a href='/'>Startseite</a>.</body>"));
+  }
+  else { 
+    httpServer.sendHeader("Connection", "close");
+    httpServer.send(200, "text/html", F("<body>Reboot OK, please open the <a href='/'>main page</a>.</body>"));
+  }
   delay(500);
   ESP.restart();
 }
@@ -425,8 +454,14 @@ void Handle_Reboot()
 // **************************************************************************
 void Handle_ClearConfig()
 {
-  httpServer.sendHeader("Connection", "close");
-  httpServer.send(200, "text/html", F("<body>Config File deleted, ESP reboot, please open the <a href='/'>main page</a>.</body>"));
+  if (de_enabled) {
+    httpServer.sendHeader("Verbindung", "geschlossen");
+    httpServer.send(200, "text/html", F("<body>Config-Datei gelöscht, ESP Neustart, bitte &#246;ffne die <a href='/'>Startseite</a>.</body>"));
+  }
+  else {
+    httpServer.sendHeader("Connection", "close");
+    httpServer.send(200, "text/html", F("<body>Config file deleted, ESP reboot, please open the <a href='/'>main page</a>.</body>"));
+  }
   SPIFFS.remove("/config.json");
   delay(500);
   ESP.restart();
@@ -437,14 +472,20 @@ void Handle_ClearConfig()
 //  HTML Page for ESP configuration
 // **************************************************************************
 void Handle_config()
-{
+{ 
   if (httpServer.method() == HTTP_GET) {
-    DEBUG_PRINTLN("WEB: Connection received - /config");
+    DEBUG_PRINTLN("[0477] WEB: Connection established - /config");
     sendConfigPage("", "", 0, 200);
-  } else {
-    DEBUG_PRINTLN("WEB: Connection received - /config (save)");
-    sendConfigPage("Settings saved successfully! Please Reboot!", "Success!", 1, 200);
+  } 
+  else {
+    DEBUG_PRINTLN("[0481] WEB: Connection established - /config (save)");
     }
+  if (de_enabled) {
+    sendConfigPage("Settings erfolgreich gesichert! Bitte neu starten!", "Erfolg!", 1, 200);
+    }
+  else {
+    sendConfigPage("Settings saved! Please reboot!", "Success!", 1, 200);
+  }
 }
 
 void sendConfigPage(String message, String header, int type, int httpcode)
@@ -452,55 +493,66 @@ void sendConfigPage(String message, String header, int type, int httpcode)
   char host_name_conf[20] = "";
   char ntpserver_conf[30] = "";
   bool ntpenabled_conf;
+  bool deenabled_conf;
 
   if (type == 1){                                              // Type 1 -> save data
-    String message = "WEB: Number of args received:";
+    String message = "[0499] WEB: Number of args received: ";
     message += String(httpServer.args()) + "\n";
     for (int i = 0; i < httpServer.args(); i++) {
-      message += "Arg " + (String)i + " â€“> ";
+      message += "[0502] Arg " + (String)i + " â€“> ";
       message += httpServer.argName(i) + ":" ;
       message += httpServer.arg(i) + "\n";
     }
-    if (httpServer.hasArg("ntpenabled")) {ntpenabled_conf = true;} else {ntpenabled_conf = false;}
+    
     strncpy(host_name_conf, httpServer.arg("host_name_conf").c_str(), 20);
     strncpy(ntpserver_conf, httpServer.arg("ntpserver_conf").c_str(), 30);
+    if (httpServer.hasArg("ntpenabled")) {ntpenabled_conf = true;} else {ntpenabled_conf = false;}
+    if (httpServer.hasArg("deenabled")) {deenabled_conf = true;} else {deenabled_conf = false;}
 
+    DEBUG_PRINT("[0512]");
     DEBUG_PRINTLN(message);
 
     // validate values before saving
-    bool validconf = true;
+    bool validconf;
+    if (httpServer.args() != 0) {
+      validconf = true;
+    }
+    else {
+      validconf = false;
+    }
     if (validconf)
     {
-      DEBUG_PRINTLN("SPI: save config.json...");
+      DEBUG_PRINTLN("[0525] SPI: save config.json...");
       DynamicJsonBuffer jsonBuffer;
       JsonObject& json = jsonBuffer.createObject();
       json["hostname"] = String(host_name_conf);
       json["ntpserver"] = String(ntpserver_conf);
       json["ntpenabled"] = String(ntpenabled_conf);
+      json["deenabled"] = String(deenabled_conf);
 
       File configFile = SPIFFS.open("/config.json", "w");
       if (!configFile) {
-        DEBUG_PRINTLN("SPI: failed to open config file for writing");
+        DEBUG_PRINTLN("[0535] SPI: failed to open config file for writing");
       }
       #ifdef DEBUG
         json.printTo(Serial);
       #endif
-      DEBUG_PRINTLN("");
+      DEBUG_PRINTLN("[0540]");
       json.printTo(configFile);
       configFile.close();
-      //end save
+      // end save
     }
   } else {                                // Type 0 -> load data
     if (SPIFFS.begin())
     {
-      DEBUG_PRINTLN("SPI: mounted file system");
+      DEBUG_PRINTLN("[0548] SPI: mounted file system");
       if (SPIFFS.exists("/config.json"))
       {
-        //file exists, reading and loading
-        DEBUG_PRINTLN("SPI: reading config file");
+        // file exists, reading and loading
+        DEBUG_PRINTLN("[0552] SPI: reading config file");
         File configFile = SPIFFS.open("/config.json", "r");
         if (configFile) {
-          DEBUG_PRINTLN("SPI: opened config file");
+          DEBUG_PRINTLN("[0555] SPI: opened config file");
           size_t size = configFile.size();
           // Allocate a buffer to store contents of the file.
           std::unique_ptr<char[]> buf(new char[size]);
@@ -508,22 +560,23 @@ void sendConfigPage(String message, String header, int type, int httpcode)
           configFile.readBytes(buf.get(), size);
           DynamicJsonBuffer jsonBuffer;
           JsonObject& json = jsonBuffer.parseObject(buf.get());
-          DEBUG_PRINT("JSO: ");
+          DEBUG_PRINT("[0563] JSO: ");
           #ifdef DEBUG
             json.printTo(Serial);
           #endif
           if (json.success()) {
-            DEBUG_PRINTLN("\nJSO: parsed json");
+            DEBUG_PRINTLN("\n[0568] JSO: parsed json");
             if (json.containsKey("hostname")) strncpy(host_name_conf, json["hostname"], 20);
             if (json.containsKey("ntpserver")) strncpy(ntpserver_conf, json["ntpserver"], 30);
             if (json.containsKey("ntpenabled")) ntpenabled_conf = json["ntpenabled"];
+            if (json.containsKey("deenabled")) deenabled_conf = json["deenabled"];
           } else {
-            DEBUG_PRINTLN("JSO: failed to load json config");
+            DEBUG_PRINTLN("[0574] JSO: failed to load json config");
           }
         }
       }
     } else {
-      DEBUG_PRINTLN("SPI: failed to mount FS");
+      DEBUG_PRINTLN("[0579] SPI: failed to mount FS");
     }
   }
   String htmlDataconf;        // Hold the HTML Code
@@ -532,28 +585,48 @@ void sendConfigPage(String message, String header, int type, int httpcode)
   htmlDataconf=htmlHeader;
   
   if (type == 1)
-    htmlDataconf+="      <div class='row'><div class='col-md-12'><div class='alert alert-success'><strong>" + header + "!</strong> " + message + "</div></div></div>\n";
+    htmlDataconf+="      <div class='row'><div class='col-md-12'><div class='alert alert-success'><strong>" + header + "</strong> " + message + "</div></div></div>\n";
   if (type == 2)
-    htmlDataconf+="      <div class='row'><div class='col-md-12'><div class='alert alert-warning'><strong>" + header + "!</strong> " + message + "</div></div></div>\n";
+    htmlDataconf+="      <div class='row'><div class='col-md-12'><div class='alert alert-warning'><strong>" + header + "</strong> " + message + "</div></div></div>\n";
   if (type == 3)
-    htmlDataconf+="      <div class='row'><div class='col-md-12'><div class='alert alert-danger'><strong>" + header + "!</strong> " + message + "</div></div></div>\n";
+    htmlDataconf+="      <div class='row'><div class='col-md-12'><div class='alert alert-danger'><strong>" + header + "</strong> " + message + "</div></div></div>\n";
   htmlDataconf+="      <div class='row'>\n";
   htmlDataconf+="<form method='post' action='/config'>";
   htmlDataconf+="        <div class='col-md-12'>\n";
-  htmlDataconf+="          <h3>Configuration</h3>\n";
+  if (de_enabled) {
+    htmlDataconf+="          <h3>Konfiguration</h3>\n";
+  } 
+  else {
+    htmlDataconf+="          <h3>Configuration</h3>\n";
+  }
   htmlDataconf+="          <table class='table table-striped' style='table-layout: fixed;'>\n";
-  htmlDataconf+="            <thead><tr><th>Option</th><th>Current Value</th><th>New Value</th></tr></thead>\n";
+  if (de_enabled) {
+    htmlDataconf+="            <thead><tr><th>Option</th><th>Aktueller Wert</th><th>Neuer Wert</th></tr></thead>\n";
+    } 
+  else {
+    htmlDataconf+="            <thead><tr><th>Option</th><th>Current value</th><th>New value</th></tr></thead>\n";
+    }
   htmlDataconf+="            <tbody>\n";
   htmlDataconf+="            <tr class='text-uppercase'><td>Hostname</td><td><code>" + ((host_name_conf[0] == 0 ) ? String("(" + String(host_name) + ")") : String(host_name_conf)) + "</code></td><td><input type='text' id='host_name_conf' name='host_name_conf' value='" + String(host_name_conf) + "'></td></tr>\n";
   htmlDataconf+="            <tr class='text-uppercase'><td>NTP Server</td><td><code>" + ((ntpserver_conf[0] == 0 ) ? String("(" + String(poolServerName) + ")") : String(ntpserver_conf)) + "</code></td><td><input type='text' id='ntpserver_conf' name='ntpserver_conf' value='" + String(ntpserver_conf) + "'></td></tr>\n";
-  htmlDataconf+="            <tr class='text-uppercase'><td>NTP enabled?</td><td><code>" + (ntpenabled_conf ? String("Yes") : String("No")) + "</code></td><td><input type='checkbox' id='ntpena' name='ntpenabled' " + (ntpenabled_conf ? String("checked") : String("")) + "></td></tr>";
-  htmlDataconf+=" <tr><td colspan='5' class='text-center'><em><a href='/reboot' class='btn btn-sm btn-danger'>Reboot</a>  <a href='/update' class='btn btn-sm btn-warning'>Update</a>  <button type='submit' class='btn btn-sm btn-success'>Save</button>  <a href='/' class='btn btn-sm btn-primary'>Cancel</a></em></td></tr>";
+  if (de_enabled) {
+    htmlDataconf+="            <tr class='text-uppercase'><td>NTP ein?</td><td><code>" + (ntpenabled_conf ? String("Ja") : String("Nein")) + "</code></td><td><input type='checkbox' id='ntpena' name='ntpenabled' " + (ntpenabled_conf ? String("checked") : String("")) + "></td></tr>";
+    htmlDataconf+="            <tr class='text-uppercase'><td>Sprache Deutsch ein?</td><td><code>" + (deenabled_conf ? String("Ja") : String("Nein")) + "</code></td><td><input type='checkbox' id='deenab' name='deenabled' " + (deenabled_conf ? String("checked") : String("")) + "></td></tr>";
+//    htmlDataconf+=" <tr><td colspan='5' class='text-center'><em><a href='/reboot' class='btn btn-sm btn-danger'>Neustart</a>  <a href='/update' class='btn btn-sm btn-warning'>Update</a>  <button type='submit' class='btn btn-sm btn-success'>Sichern</button>  <a href='/' class='btn btn-sm btn-primary'>Abbruch</a></em></td></tr>";
+    htmlDataconf+=" <tr><td colspan='5' class='text-center'><em><a href='/reboot' class='btn btn-sm btn-danger'>Neustart</a>  <button type='submit' class='btn btn-sm btn-success'>Sichern</button>  <a href='/' class='btn btn-sm btn-primary'>Abbruch</a></em></td></tr>";
+  }
+  else {
+    htmlDataconf+="            <tr class='text-uppercase'><td>NTP on?</td><td><code>" + (ntpenabled_conf ? String("Yes") : String("No")) + "</code></td><td><input type='checkbox' id='ntpena' name='ntpenabled' " + (ntpenabled_conf ? String("checked") : String("")) + "></td></tr>";
+    htmlDataconf+="            <tr class='text-uppercase'><td>German language on?</td><td><code>" + (deenabled_conf ? String("YES") : String("No")) + "</code></td><td><input type='checkbox' id='deenab' name='deenabled' " + (deenabled_conf ? String("checked") : String("")) + "></td></tr>";
+//    htmlDataconf+=" <tr><td colspan='5' class='text-center'><em><a href='/reboot' class='btn btn-sm btn-danger'>Roboot</a>  <a href='/update' class='btn btn-sm btn-warning'>Update</a>  <button type='submit' class='btn btn-sm btn-success'>Save</button>  <a href='/' class='btn btn-sm btn-primary'>Cancel</a></em></td></tr>";
+    htmlDataconf+=" <tr><td colspan='5' class='text-center'><em><a href='/reboot' class='btn btn-sm btn-danger'>Roboot</a>  <button type='submit' class='btn btn-sm btn-success'>Save</button>  <a href='/' class='btn btn-sm btn-primary'>Cancel</a></em></td></tr>";
+  }
   htmlDataconf+="            </tbody></table>\n";
   htmlDataconf+="          </div></div>\n";
   
   htmlDataconf+=htmlFooter;
 
-  httpServer.send(httpcode, "text/html; charset=utf-8", htmlDataconf);
+  httpServer.send(httpcode, "text/html; charset=UTF-8", htmlDataconf);
   httpServer.client().stop();
 }
 
@@ -583,10 +656,13 @@ String hextodec(String hex) {
 // **************************************************************************
 void Handle_tonuino(){
   if (httpServer.method() == HTTP_GET) {
-    DEBUG_PRINTLN("WEB: Connection received - /tonuino");
+    DEBUG_PRINTLN("[0659] WEB: Connection established - /tonuino");
 
     // Look for new cards
+
     bool card = 0;
+    strDataBlock = "00000000000000000000000000000000";
+    hexCharacterStringToBytes(dataBlock, strDataBlock.c_str());
     if (mfrc522.PICC_IsNewCardPresent()) 
     {
       card = 1;
@@ -598,8 +674,15 @@ void Handle_tonuino(){
     }
 
     if (card == 0) {
-      DEBUG_PRINTLN("RFID: No card present!");
-      sendControlPage("No card present! Below values are not coming from the card!", "Warning!", 2, 200);
+      strDataBlock = "00000000000000000000000000000000";
+      hexCharacterStringToBytes(dataBlock, strDataBlock.c_str());
+      DEBUG_PRINTLN("[0679] RFID: No card presented!");
+      if (de_enabled) {
+        sendControlPage("Keine Karte aufgelegt! Werte unten stammen nicht von einer Karte!", "Warnung!", 2, 200);
+      }
+      else {
+        sendControlPage("No Card presented! Values do not come from a card!", "Warning!", 2, 200);
+      }
     }
     else {
       readblock(1,0);
@@ -607,16 +690,21 @@ void Handle_tonuino(){
       mfrc522.PICC_HaltA();
       // Stop encryption on PCD
       mfrc522.PCD_StopCrypto1();
-      sendControlPage("Values (" + byteToHexString(dataBlock,sizeof(dataBlock)) + ") read from card!", "Success!", 1, 200);
+      if (de_enabled) {
+        sendControlPage("Werte (" + byteToHexString(dataBlock,sizeof(dataBlock)) + ") gelesen von Karte!", "Erfolg!", 1, 200);
+      }
+      else {
+      sendControlPage("Values (" + byteToHexString(dataBlock,sizeof(dataBlock)) + ") read from a Card!", "Success!", 1, 200);
+      }
     }  
   } 
   else {
-    DEBUG_PRINTLN("WEB: Connection received - /tonuino (write card)");
+    DEBUG_PRINTLN("[0702] WEB: Connection established - /tonuino (write card)");
     // generate the Tonuino MiFare sector 1 block 0
     strDataBlock = httpServer.arg(0);
     if (httpServer.arg(1).length() == 1) strDataBlock += "0";     // "1" -> "01"
     strDataBlock += httpServer.arg(1);  // Version
-    if (httpServer.arg(3) == "8") { // Modifier Karte
+    if (httpServer.arg(3) == "8") {     // Modifier Karte
       strDataBlock += "00";
     }
     else {
@@ -624,29 +712,29 @@ void Handle_tonuino(){
       strDataBlock += dectohex(httpServer.arg(2));      
     }
 
-    if (httpServer.arg(3) == "0") { // Hörspiel
+    if (httpServer.arg(3) == "0") {     // Hörspiel
       strDataBlock += "01";
     }
 
-    if (httpServer.arg(3) == "1") { // Album
+    if (httpServer.arg(3) == "1") {     // Album
       strDataBlock += "02";
     }
 
-    if (httpServer.arg(3) == "2") { // Party
+    if (httpServer.arg(3) == "2") {     // Party
       strDataBlock += "03";
     }
 
-    if (httpServer.arg(3) == "3") { // Einzel
+    if (httpServer.arg(3) == "3") {     // Einzel
       strDataBlock += "04";
       if (dectohex(httpServer.arg(4)).length() == 1) strDataBlock += "0";
         strDataBlock += dectohex(httpServer.arg(4));
     }
 
-    if (httpServer.arg(3) == "4") { // Hörbuch
+    if (httpServer.arg(3) == "4") {     // Hörbuch
       strDataBlock += "05";
     }
 
-    if (httpServer.arg(3) == "5") { // Hörspiel von bis
+    if (httpServer.arg(3) == "5") {     // Hörspiel von bis
       strDataBlock += "07";
       if (dectohex(httpServer.arg(6)).length() == 1) strDataBlock += "0";
         strDataBlock += dectohex(httpServer.arg(6));
@@ -654,7 +742,7 @@ void Handle_tonuino(){
         strDataBlock += dectohex(httpServer.arg(8));
     }
 
-    if (httpServer.arg(3) == "6") { // Album von bis
+    if (httpServer.arg(3) == "6") {     // Album von bis
       strDataBlock += "08";
       if (dectohex(httpServer.arg(6)).length() == 1) strDataBlock += "0";
         strDataBlock += dectohex(httpServer.arg(6));
@@ -662,7 +750,7 @@ void Handle_tonuino(){
         strDataBlock += dectohex(httpServer.arg(8));
     }
 
-    if (httpServer.arg(3) == "7") { // Party von bis
+    if (httpServer.arg(3) == "7") {     // Party von bis
       strDataBlock += "09";
       if (dectohex(httpServer.arg(6)).length() == 1) strDataBlock += "0";
         strDataBlock += dectohex(httpServer.arg(6));
@@ -683,7 +771,6 @@ void Handle_tonuino(){
     if (httpServer.arg(3) == "8" && httpServer.arg(5) == "2") { // Modifier Karte - Pausetanz Modus
       strDataBlock += "02";
     }
-
 
     if (httpServer.arg(3) == "8" && httpServer.arg(5) == "3") { // Modifier Karte - Sperre Modus
       strDataBlock += "03";
@@ -709,9 +796,11 @@ void Handle_tonuino(){
     
     // convert the hex har array to hex byte array
     hexCharacterStringToBytes(dataBlock, strDataBlock.c_str());
-
+    
     // Look for new cards
     bool card = 0;
+    strDataBlock = "00000000000000000000000000000000";
+    hexCharacterStringToBytes(dataBlock, strDataBlock.c_str());
     if (mfrc522.PICC_IsNewCardPresent()) 
     {
       card = 1;
@@ -723,8 +812,15 @@ void Handle_tonuino(){
     }
 
     if (card == 0) {
-      DEBUG_PRINTLN("RFID: No card present!");
-      sendControlPage("No card present!", "Error!", 3, 200);
+      DEBUG_PRINTLN("[0815] RFID: No card presented!");
+      if (de_enabled) {
+        sendControlPage("Keine Karte aufgelegt!", "Fehler!", 3, 200);
+      }
+      else {
+        sendControlPage("No card presented!", "Error!", 3, 200);
+      }
+      strDataBlock = "00000000000000000000000000000000";
+      hexCharacterStringToBytes(dataBlock, strDataBlock.c_str());
     }
     else {
       // Write the block to the card
@@ -733,16 +829,24 @@ void Handle_tonuino(){
       mfrc522.PICC_HaltA();
       // Stop encryption on PCD
       mfrc522.PCD_StopCrypto1();
-      sendControlPage("New values (" + byteToHexString(dataBlock,sizeof(dataBlock)) + ") written to card!", "Success!", 1, 200);
-    } 
+      if (de_enabled) {
+        sendControlPage("Neue Werte (" + byteToHexString(dataBlock,sizeof(dataBlock)) + ") auf die Karte geschrieben!", "Erfolg!", 1, 200);
+      }
+      else {
+        sendControlPage("New values (" + byteToHexString(dataBlock,sizeof(dataBlock)) + ") written to card!", "Success!", 1, 200);
+      }
+      strDataBlock = "00000000000000000000000000000000";
+      hexCharacterStringToBytes(dataBlock, strDataBlock.c_str());
+    }
   }
 }
 
 
 void sendControlPage(String message, String header, int type, int httpcode)
 {
-  if (type == 1){                                               // Type 1
-    String message = "WEB: New values set via control page: ";
+  if (type == 1) {                                               // Type 1
+//    String message = "WEB: Neue Werte gesetzt über die control page: ";
+    String message = "[0849] WEB: Set new values using control page: ";
     message += String(httpServer.args()) + "\n";
     for (int i = 0; i < httpServer.args(); i++) {
       message += "Arg " + (String)i + " -> ";
@@ -771,82 +875,155 @@ void sendControlPage(String message, String header, int type, int httpcode)
   htmlDataconf+="      <div class='row'>\n";
   htmlDataconf+="       <form method='post' action='/tonuino'>\n";
   htmlDataconf+="        <div class='col-md-12'>\n";
-  htmlDataconf+="          <h3>Create / Change Tonuino Card</h3>\n";
-  htmlDataconf+="          <table class='table table-striped' style='table-layout: fixed;'>\n";
-  htmlDataconf+="            <thead><tr><th>Option</th><th colspan='3'>Values</th><th>Comments</th></tr></thead>\n";
-  htmlDataconf+="            <tbody>\n";
-  htmlDataconf+="              <tr><td>Magic Number</td><td><input type='text' id='magicnumber_set' name='magicnumber_set' size='6' maxlength='8' value='" + byteToHexStringRange(dataBlock,0,4) + "'></td><td></td><td></td><td>Nummer muss mit dem Tonuino übereinstimmen, default ist 1337B347</td></tr>\n";
-  htmlDataconf+="              <tr><td>Version</td><td>";
-  htmlDataconf+="                <select name='version_set' size='1'>\n";
-  htmlDataconf+="                  <option " + ((byteToHexStringRange(dataBlock,4,5) == "01" ) ? String("selected") : String("")) + ">1</option>\n";
-  htmlDataconf+="                  <option " + ((byteToHexStringRange(dataBlock,4,5) == "02" ) ? String("selected") : String("")) + ">2</option>\n";
-  htmlDataconf+="                </select>\n";
-  htmlDataconf+="               </td><td></td><td></td><td>V1 is for Tonuino 2.0.x<br>V2 is forTonuino 2.1.x</td></tr>\n";
-  htmlDataconf+="              <tr><td>Ordner Nummer</td><td><input type='text' id='folder_set' name='folder_set' size='2' maxlength='2' value='" + ((byteToHexStringRange(dataBlock,5,6) == "00") ? String("01") : hextodec(byteToHexStringRange(dataBlock,5,6))) + "'> (1-99)</td><td></td><td></td><td></td></tr>\n";
-  htmlDataconf+="              <tr><td>Kartentyp</td><td>\n";
-  htmlDataconf+="                <select id='select_card' onchange='einblenden()' name='cardtype' size='1'>\n";
-  htmlDataconf+="                  <option value='0' " + ((byteToHexStringRange(dataBlock,6,7) == "01" ) ? String("selected") : String("")) + ">Hörspiel</option>\n";
-  htmlDataconf+="                  <option value='1' " + ((byteToHexStringRange(dataBlock,6,7) == "02" ) ? String("selected") : String("")) + ">Album</option>\n";
-  htmlDataconf+="                  <option value='2' " + ((byteToHexStringRange(dataBlock,6,7) == "03" ) ? String("selected") : String("")) + ">Party</option>\n";
-  htmlDataconf+="                  <option value='3' " + ((byteToHexStringRange(dataBlock,6,7) == "04" ) ? String("selected") : String("")) + ">Einzel</option>\n";
-  htmlDataconf+="                  <option value='4' " + ((byteToHexStringRange(dataBlock,6,7) == "05" ) ? String("selected") : String("")) + ">Hörbuch</option>\n";
-  htmlDataconf+="                  <option value='5' " + ((byteToHexStringRange(dataBlock,6,7) == "07" ) ? String("selected") : String("")) + ">Hörspiel von-bis</option>\n";
-  htmlDataconf+="                  <option value='6' " + ((byteToHexStringRange(dataBlock,6,7) == "08" ) ? String("selected") : String("")) + ">Album von-bis</option>\n";
-  htmlDataconf+="                  <option value='7' " + ((byteToHexStringRange(dataBlock,6,7) == "09" ) ? String("selected") : String("")) + ">Party von-bis</option>\n";
-  htmlDataconf+="                  <option value='8' " + ((byteToHexStringRange(dataBlock,5,6) == "00" ) ? String("selected") : String("")) + ">Sonderkarte</option>\n";
-  htmlDataconf+="                </select>\n";
-  htmlDataconf+="              </td><td>\n";
-  htmlDataconf+="                      <input type='text' id='input_title1' name='title' value='" + hextodec(byteToHexStringRange(dataBlock,7,8)) + "' size='2' maxlength='3' style='display: " + ((byteToHexStringRange(dataBlock,6,7) == "04" ) ? String("inline") : String("none")) +  ";'> <div id='input_title2' style='display: " + ((byteToHexStringRange(dataBlock,6,7) == "04" ) ? String("inline") : String("none")) +  ";'>(1-255)</div>\n";
-  htmlDataconf+="                    <select id='select_admincard' name='admincardtype' style='display: " + ((byteToHexStringRange(dataBlock,5,6) == "00" ) ? String("inline") : String("none")) + ";' onchange='einblenden()'>\n";
-  htmlDataconf+="                      <option value='0' " + ((byteToHexStringRange(dataBlock,5,7) == "0000") ? String("selected") : String("")) + ">Admin Menü</option>\n";
-  htmlDataconf+="                      <option value='1' " + ((byteToHexStringRange(dataBlock,5,7) == "0001") ? String("selected") : String("")) + ">Einschlaf Modus</option>\n";
-  htmlDataconf+="                      <option value='2' " + ((byteToHexStringRange(dataBlock,5,7) == "0002") ? String("selected") : String("")) + ">Pausetanz Modus</option>\n";
-  htmlDataconf+="                      <option value='3' " + ((byteToHexStringRange(dataBlock,5,7) == "0003") ? String("selected") : String("")) + ">Sperre</option>\n";
-  htmlDataconf+="                      <option value='4' " + ((byteToHexStringRange(dataBlock,5,7) == "0004") ? String("selected") : String("")) + ">Kleinkind Modus</option>\n";
-  htmlDataconf+="                      <option value='5' " + ((byteToHexStringRange(dataBlock,5,7) == "0005") ? String("selected") : String("")) + ">Kindergarten Modus</option>\n";
-  htmlDataconf+="                      <option value='6' " + ((byteToHexStringRange(dataBlock,5,7) == "0006") ? String("selected") : String("")) + ">Titel wiederholen</option>\n";
-  htmlDataconf+="                      <option value='7' " + ((byteToHexStringRange(dataBlock,5,7) == "0007") ? String("selected") : String("")) + ">Audio-Feedback</option>\n";
-  htmlDataconf+="                    </select>\n";
-  htmlDataconf+="                    <input type='text' id='input_titleA1' name='titlefrom' value='" + hextodec(byteToHexStringRange(dataBlock,7,8)) + "' size='2' maxlength='3' style='display: " + ((byteToHexStringRange(dataBlock,6,7) == "07" ) || (byteToHexStringRange(dataBlock,6,7) == "08" ) || (byteToHexStringRange(dataBlock,6,7) == "09" ) ? String("inline") : String("none")) +  ";'> <div id='input_titleA2' style='display: " + ((byteToHexStringRange(dataBlock,6,7) == "07" ) || (byteToHexStringRange(dataBlock,6,7) == "08" ) || (byteToHexStringRange(dataBlock,6,7) == "09" ) ? String("inline") : String("none")) +  ";'>(1-255)</div>\n";
-  htmlDataconf+="                  </td><td>\n";
-  htmlDataconf+="                    <input type='text' id='input_time1' name='sleeptime' value='" + hextodec(byteToHexStringRange(dataBlock,7,8)) + "' size='1' maxlength='2' style='display: " + ((byteToHexStringRange(dataBlock,5,7) == "0001" ) ? String("inline") : String("none")) + ";'> <div id='input_time2' style='display: " + ((byteToHexStringRange(dataBlock,5,7) == "0001" ) ? String("inline") : String("none")) + ";'>(1-99 min)</div>\n";
-  htmlDataconf+="                    <input type='text' id='input_titleB1' name='titletill' value='" + hextodec(byteToHexStringRange(dataBlock,8,9)) + "' size='1' maxlength='3' style='display: " + ((byteToHexStringRange(dataBlock,6,7) == "07" ) || (byteToHexStringRange(dataBlock,6,7) == "08" ) || (byteToHexStringRange(dataBlock,6,7) == "09" ) ? String("inline") : String("none")) +  ";'> <div id='input_titleB2' style='display: " + ((byteToHexStringRange(dataBlock,6,7) == "07" ) || (byteToHexStringRange(dataBlock,6,7) == "08" ) || (byteToHexStringRange(dataBlock,6,7) == "09" ) ? String("inline") : String("none")) +  ";'>(1-255)</div>\n";
-  htmlDataconf+="                  </td><td>\n";
-  htmlDataconf+="                        <div id='hoerspiel' style='display: " + ((byteToHexStringRange(dataBlock,6,7) == "01" ) && (byteToHexStringRange(dataBlock,5,6) != "00" ) ? String("inline") : String("none")) + ";'>\n";
-  htmlDataconf+="                        Ein zufälliger Titel aus dem gewählten Ordner wird abgespielt.\n";
-  htmlDataconf+="                        </div>\n";
-  htmlDataconf+="                        <div id='album' style='display: " + ((byteToHexStringRange(dataBlock,6,7) == "02" ) && (byteToHexStringRange(dataBlock,5,6) != "00" ) ? String("inline") : String("none")) + ";'>\n";
-  htmlDataconf+="                        Spielt alle Titel des Ordners in numerischer Reihenfolge.\n";
-  htmlDataconf+="                        </div>\n";
-  htmlDataconf+="                        <div id='party' style='display: " + ((byteToHexStringRange(dataBlock,6,7) == "03" ) && (byteToHexStringRange(dataBlock,5,6) != "00" ) ? String("inline") : String("none")) + ";'>\n";
-  htmlDataconf+="                        Spielt zufällige Titel des Ordners in Endlosschleife.\n";
-  htmlDataconf+="                        </div>\n";
-  htmlDataconf+="                        <div id='einzel' style='display: " + ((byteToHexStringRange(dataBlock,6,7) == "04" ) && (byteToHexStringRange(dataBlock,5,6) != "00" ) ? String("inline") : String("none")) + ";'>\n";
-  htmlDataconf+="                        Spielt Datei xxx.mp3 ab.\n";
-  htmlDataconf+="                        </div>\n";
-  htmlDataconf+="                        <div id='hoerbuch' style='display: " + ((byteToHexStringRange(dataBlock,6,7) == "05" ) && (byteToHexStringRange(dataBlock,5,6) != "00" ) ? String("inline") : String("none")) + ";'>\n";
-  htmlDataconf+="                        Spielt alle Titel des Ordners in numerischer Reihenfolge und speichert den Fortschritt, sodass beim nächsten Verwenden der Karte beim aktuellen Titel begonnen wird.\n";
-  htmlDataconf+="                        </div>\n";
-  htmlDataconf+="                        <div id='hoerspielvonbis' style='display: " + ((byteToHexStringRange(dataBlock,6,7) == "07" ) && (byteToHexStringRange(dataBlock,5,6) != "00" ) ? String("inline") : String("none")) + ";'>\n";
-  htmlDataconf+="                        Ein zufälliger Titel im gewählten Ordner zwischen von und bis wird abgespielt.\n";
-  htmlDataconf+="                        </div>\n";
-  htmlDataconf+="                        <div id='albumvonbis' style='display: " + ((byteToHexStringRange(dataBlock,6,7) == "08" ) && (byteToHexStringRange(dataBlock,5,6) != "00" ) ? String("inline") : String("none")) + ";'>\n";
-  htmlDataconf+="                        Spielt alle Titel des Ordners zwischen von und bis in numerischer Reihenfolge.\n";
-  htmlDataconf+="                        </div>\n";
-  htmlDataconf+="                        <div id='partyvonbis' style='display: " + ((byteToHexStringRange(dataBlock,6,7) == "09" ) && (byteToHexStringRange(dataBlock,5,6) != "00" ) ? String("inline") : String("none")) + ";'>\n";
-  htmlDataconf+="                        Spielt zufällige Titel des Ordners zwischen von und bis in Endlosschleife.\n";
-  htmlDataconf+="                        </div>\n";
-  htmlDataconf+="                        <div id='Sonder' style='display: " + ((byteToHexStringRange(dataBlock,5,6) == "00" ) ? String("inline") : String("none")) + ";'>\n";
-  htmlDataconf+="                        Das ist eine Sonderkarte:\n";
-  htmlDataconf+="                        </div>\n";
-  htmlDataconf+="                  </td></tr>\n";
-  htmlDataconf+="            <tr><td colspan='5' class='text-center'><em> <button type='submit' class='btn btn-sm btn-success'>Write Card</button> <a href='/tonuino' class='btn btn-sm btn-warning'>Read Card</a>  <a href='/' class='btn btn-sm btn-primary'>Cancel</a></em></td></tr>\n";
+  if (de_enabled) {
+    htmlDataconf+="          <h3>Erzeuge / Ändere Tonuino Karte</h3>\n";
+    htmlDataconf+="          <table class='table table-striped' style='table-layout: fixed;'>\n";
+    htmlDataconf+="            <thead><tr><th>Option</th><th colspan='3'>Werte</th><th>Kommentare</th></tr></thead>\n";
+    htmlDataconf+="            <tbody>\n";
+    htmlDataconf+="              <tr><td>Magic Number</td><td><input type='text' id='magicnumber_set' name='magicnumber_set' size='6' maxlength='8' value='" + byteToHexStringRange(dataBlock,0,4) + "'></td><td></td><td></td><td>Nummer muss mit dem Tonuino übereinstimmen, default ist 1337B347</td></tr>\n";
+    htmlDataconf+="              <tr><td>Version</td><td>";
+    htmlDataconf+="                <select name='version_set' size='1'>\n";
+    htmlDataconf+="                  <option " + ((byteToHexStringRange(dataBlock,4,5) == "01" ) ? String("selected") : String("")) + ">1</option>\n";
+    htmlDataconf+="                  <option " + ((byteToHexStringRange(dataBlock,4,5) == "02" ) ? String("selected") : String("")) + ">2</option>\n";
+    htmlDataconf+="                </select>\n";
+    htmlDataconf+="               </td><td></td><td></td><td>V1 ist für Tonuino 2.0.x<br>V2 ist für Tonuino 2.1.x</td></tr>\n";
+    htmlDataconf+="              <tr><td>Ordner Nummer</td><td><input type='text' id='folder_set' name='folder_set' size='2' maxlength='2' value='" + ((byteToHexStringRange(dataBlock,5,6) == "00") ? String("01") : hextodec(byteToHexStringRange(dataBlock,5,6))) + "'> (1-99)</td><td></td><td></td><td></td></tr>\n";
+    htmlDataconf+="              <tr><td>Kartentyp</td><td>\n";
+    htmlDataconf+="                <select id='select_card' onchange='einblenden()' name='cardtype' size='1'>\n";
+    htmlDataconf+="                  <option value='0' " + ((byteToHexStringRange(dataBlock,6,7) == "01" ) ? String("selected") : String("")) + ">Hörspiel</option>\n";
+    htmlDataconf+="                  <option value='1' " + ((byteToHexStringRange(dataBlock,6,7) == "02" ) ? String("selected") : String("")) + ">Album</option>\n";
+    htmlDataconf+="                  <option value='2' " + ((byteToHexStringRange(dataBlock,6,7) == "03" ) ? String("selected") : String("")) + ">Party</option>\n";
+    htmlDataconf+="                  <option value='3' " + ((byteToHexStringRange(dataBlock,6,7) == "04" ) ? String("selected") : String("")) + ">Einzel</option>\n";
+    htmlDataconf+="                  <option value='4' " + ((byteToHexStringRange(dataBlock,6,7) == "05" ) ? String("selected") : String("")) + ">Hörbuch</option>\n";
+    htmlDataconf+="                  <option value='5' " + ((byteToHexStringRange(dataBlock,6,7) == "07" ) ? String("selected") : String("")) + ">Hörspiel von-bis</option>\n";
+    htmlDataconf+="                  <option value='6' " + ((byteToHexStringRange(dataBlock,6,7) == "08" ) ? String("selected") : String("")) + ">Album von-bis</option>\n";
+    htmlDataconf+="                  <option value='7' " + ((byteToHexStringRange(dataBlock,6,7) == "09" ) ? String("selected") : String("")) + ">Party von-bis</option>\n";
+    htmlDataconf+="                  <option value='8' " + ((byteToHexStringRange(dataBlock,5,6) == "00" ) ? String("selected") : String("")) + ">Sonderkarte</option>\n";
+    htmlDataconf+="                </select>\n";
+    htmlDataconf+="              </td><td>\n";
+    htmlDataconf+="                      <input type='text' id='input_title1' name='title' value='" + hextodec(byteToHexStringRange(dataBlock,7,8)) + "' size='2' maxlength='3' style='display: " + ((byteToHexStringRange(dataBlock,6,7) == "04" ) ? String("inline") : String("none")) +  ";'> <div id='input_title2' style='display: " + ((byteToHexStringRange(dataBlock,6,7) == "04" ) ? String("inline") : String("none")) +  ";'>(1-255)</div>\n";
+    htmlDataconf+="                    <select id='select_admincard' name='admincardtype' style='display: " + ((byteToHexStringRange(dataBlock,5,6) == "00" ) ? String("inline") : String("none")) + ";' onchange='einblenden()'>\n";
+    htmlDataconf+="                      <option value='0' " + ((byteToHexStringRange(dataBlock,5,7) == "0000") ? String("selected") : String("")) + ">Admin Menü</option>\n";
+    htmlDataconf+="                      <option value='1' " + ((byteToHexStringRange(dataBlock,5,7) == "0001") ? String("selected") : String("")) + ">Einschlaf Modus</option>\n";
+    htmlDataconf+="                      <option value='2' " + ((byteToHexStringRange(dataBlock,5,7) == "0002") ? String("selected") : String("")) + ">Pausetanz Modus</option>\n";
+    htmlDataconf+="                      <option value='3' " + ((byteToHexStringRange(dataBlock,5,7) == "0003") ? String("selected") : String("")) + ">Sperre</option>\n";
+    htmlDataconf+="                      <option value='4' " + ((byteToHexStringRange(dataBlock,5,7) == "0004") ? String("selected") : String("")) + ">Kleinkind Modus</option>\n";
+    htmlDataconf+="                      <option value='5' " + ((byteToHexStringRange(dataBlock,5,7) == "0005") ? String("selected") : String("")) + ">Kindergarten Modus</option>\n";
+    htmlDataconf+="                      <option value='6' " + ((byteToHexStringRange(dataBlock,5,7) == "0006") ? String("selected") : String("")) + ">Titel wiederholen</option>\n";
+    htmlDataconf+="                      <option value='7' " + ((byteToHexStringRange(dataBlock,5,7) == "0007") ? String("selected") : String("")) + ">Audio-Feedback</option>\n";
+    htmlDataconf+="                    </select>\n";
+    htmlDataconf+="                    <input type='text' id='input_titleA1' name='titlefrom' value='" + hextodec(byteToHexStringRange(dataBlock,7,8)) + "' size='2' maxlength='3' style='display: " + ((byteToHexStringRange(dataBlock,6,7) == "07" ) || (byteToHexStringRange(dataBlock,6,7) == "08" ) || (byteToHexStringRange(dataBlock,6,7) == "09" ) ? String("inline") : String("none")) +  ";'> <div id='input_titleA2' style='display: " + ((byteToHexStringRange(dataBlock,6,7) == "07" ) || (byteToHexStringRange(dataBlock,6,7) == "08" ) || (byteToHexStringRange(dataBlock,6,7) == "09" ) ? String("inline") : String("none")) +  ";'>(1-255)</div>\n";
+    htmlDataconf+="                  </td><td>\n";
+    htmlDataconf+="                    <input type='text' id='input_time1' name='sleeptime' value='" + hextodec(byteToHexStringRange(dataBlock,7,8)) + "' size='1' maxlength='2' style='display: " + ((byteToHexStringRange(dataBlock,5,7) == "0001" ) ? String("inline") : String("none")) + ";'> <div id='input_time2' style='display: " + ((byteToHexStringRange(dataBlock,5,7) == "0001" ) ? String("inline") : String("none")) + ";'>(1-99 min)</div>\n";
+    htmlDataconf+="                    <input type='text' id='input_titleB1' name='titletill' value='" + hextodec(byteToHexStringRange(dataBlock,8,9)) + "' size='1' maxlength='3' style='display: " + ((byteToHexStringRange(dataBlock,6,7) == "07" ) || (byteToHexStringRange(dataBlock,6,7) == "08" ) || (byteToHexStringRange(dataBlock,6,7) == "09" ) ? String("inline") : String("none")) +  ";'> <div id='input_titleB2' style='display: " + ((byteToHexStringRange(dataBlock,6,7) == "07" ) || (byteToHexStringRange(dataBlock,6,7) == "08" ) || (byteToHexStringRange(dataBlock,6,7) == "09" ) ? String("inline") : String("none")) +  ";'>(1-255)</div>\n";
+    htmlDataconf+="                  </td><td>\n";
+    htmlDataconf+="                        <div id='hoerspiel' style='display: " + ((byteToHexStringRange(dataBlock,6,7) == "01" ) && (byteToHexStringRange(dataBlock,5,6) != "00" ) ? String("inline") : String("none")) + ";'>\n";
+    htmlDataconf+="                        Ein zufälliger Titel aus dem gewählten Ordner wird abgespielt.\n";
+    htmlDataconf+="                        </div>\n";
+    htmlDataconf+="                        <div id='album' style='display: " + ((byteToHexStringRange(dataBlock,6,7) == "02" ) && (byteToHexStringRange(dataBlock,5,6) != "00" ) ? String("inline") : String("none")) + ";'>\n";
+    htmlDataconf+="                        Spielt alle Titel des Ordners in numerischer Reihenfolge.\n";
+    htmlDataconf+="                        </div>\n";
+    htmlDataconf+="                        <div id='party' style='display: " + ((byteToHexStringRange(dataBlock,6,7) == "03" ) && (byteToHexStringRange(dataBlock,5,6) != "00" ) ? String("inline") : String("none")) + ";'>\n";
+    htmlDataconf+="                        Spielt zufällige Titel des Ordners in Endlosschleife.\n";
+    htmlDataconf+="                        </div>\n";
+    htmlDataconf+="                        <div id='einzel' style='display: " + ((byteToHexStringRange(dataBlock,6,7) == "04" ) && (byteToHexStringRange(dataBlock,5,6) != "00" ) ? String("inline") : String("none")) + ";'>\n";
+    htmlDataconf+="                        Spielt Datei xxx.mp3 ab.\n";
+    htmlDataconf+="                        </div>\n";
+    htmlDataconf+="                        <div id='hoerbuch' style='display: " + ((byteToHexStringRange(dataBlock,6,7) == "05" ) && (byteToHexStringRange(dataBlock,5,6) != "00" ) ? String("inline") : String("none")) + ";'>\n";
+    htmlDataconf+="                        Spielt alle Titel des Ordners in numerischer Reihenfolge und speichert den Fortschritt, so dass beim nächsten Verwenden der Karte beim aktuellen Titel begonnen wird.\n";
+    htmlDataconf+="                        </div>\n";
+    htmlDataconf+="                        <div id='hoerspielvonbis' style='display: " + ((byteToHexStringRange(dataBlock,6,7) == "07" ) && (byteToHexStringRange(dataBlock,5,6) != "00" ) ? String("inline") : String("none")) + ";'>\n";
+    htmlDataconf+="                        Ein zufälliger Titel im gewählten Ordner zwischen von und bis wird abgespielt.\n";
+    htmlDataconf+="                        </div>\n";
+    htmlDataconf+="                        <div id='albumvonbis' style='display: " + ((byteToHexStringRange(dataBlock,6,7) == "08" ) && (byteToHexStringRange(dataBlock,5,6) != "00" ) ? String("inline") : String("none")) + ";'>\n";
+    htmlDataconf+="                        Spielt alle Titel des Ordners zwischen von und bis in numerischer Reihenfolge.\n";
+    htmlDataconf+="                        </div>\n";
+    htmlDataconf+="                        <div id='partyvonbis' style='display: " + ((byteToHexStringRange(dataBlock,6,7) == "09" ) && (byteToHexStringRange(dataBlock,5,6) != "00" ) ? String("inline") : String("none")) + ";'>\n";
+    htmlDataconf+="                        Spielt zufällige Titel des Ordners zwischen von und bis in Endlosschleife.\n";
+    htmlDataconf+="                        </div>\n";
+    htmlDataconf+="                        <div id='Sonder' style='display: " + ((byteToHexStringRange(dataBlock,5,6) == "00" ) ? String("inline") : String("none")) + ";'>\n";
+    htmlDataconf+="                        Dies ist eine Sonderkarte\n";
+    htmlDataconf+="                        </div>\n";
+    htmlDataconf+="                  </td></tr>\n";
+    htmlDataconf+="            <tr><td colspan='5' class='text-center'><em> <button type='submit' class='btn btn-sm btn-success'>Schreibe Karte</button> <a href='/tonuino' class='btn btn-sm btn-warning'>Lese Karte</a>  <a href='/' class='btn btn-sm btn-primary'>Abbruch</a></em></td></tr>\n";
+  }
+  else {
+    htmlDataconf+="          <h3>Generate / Change Tonuino card</h3>\n";
+    htmlDataconf+="          <table class='table table-striped' style='table-layout: fixed;'>\n";
+    htmlDataconf+="            <thead><tr><th>Option</th><th colspan='3'>Values</th><th>Comments</th></tr></thead>\n";
+    htmlDataconf+="            <tbody>\n";
+    htmlDataconf+="              <tr><td>Magic Number</td><td><input type='text' id='magicnumber_set' name='magicnumber_set' size='6' maxlength='8' value='" + byteToHexStringRange(dataBlock,0,4) + "'></td><td></td><td></td><td>Number must match the Tonuino, default is 1337B347</td></tr>\n";
+    htmlDataconf+="              <tr><td>Version</td><td>";
+    htmlDataconf+="                <select name='version_set' size='1'>\n";
+    htmlDataconf+="                  <option " + ((byteToHexStringRange(dataBlock,4,5) == "01" ) ? String("selected") : String("")) + ">1</option>\n";
+    htmlDataconf+="                  <option " + ((byteToHexStringRange(dataBlock,4,5) == "02" ) ? String("selected") : String("")) + ">2</option>\n";
+    htmlDataconf+="                </select>\n";
+    htmlDataconf+="               </td><td></td><td></td><td>V1 is for Tonuino 2.0.x<br>V2 is for Tonuino 2.1.x</td></tr>\n";
+    htmlDataconf+="              <tr><td>Ordner Nummer</td><td><input type='text' id='folder_set' name='folder_set' size='2' maxlength='2' value='" + ((byteToHexStringRange(dataBlock,5,6) == "00") ? String("01") : hextodec(byteToHexStringRange(dataBlock,5,6))) + "'> (1-99)</td><td></td><td></td><td></td></tr>\n";
+    htmlDataconf+="              <tr><td>Kartentyp</td><td>\n";
+    htmlDataconf+="                <select id='select_card' onchange='einblenden()' name='cardtype' size='1'>\n";
+    htmlDataconf+="                  <option value='0' " + ((byteToHexStringRange(dataBlock,6,7) == "01" ) ? String("selected") : String("")) + ">Radioplay</option>\n";
+    htmlDataconf+="                  <option value='1' " + ((byteToHexStringRange(dataBlock,6,7) == "02" ) ? String("selected") : String("")) + ">Album</option>\n";
+    htmlDataconf+="                  <option value='2' " + ((byteToHexStringRange(dataBlock,6,7) == "03" ) ? String("selected") : String("")) + ">Party</option>\n";
+    htmlDataconf+="                  <option value='3' " + ((byteToHexStringRange(dataBlock,6,7) == "04" ) ? String("selected") : String("")) + ">Single</option>\n";
+    htmlDataconf+="                  <option value='4' " + ((byteToHexStringRange(dataBlock,6,7) == "05" ) ? String("selected") : String("")) + ">Audio book</option>\n";
+    htmlDataconf+="                  <option value='5' " + ((byteToHexStringRange(dataBlock,6,7) == "07" ) ? String("selected") : String("")) + ">Radioplay from-to</option>\n";
+    htmlDataconf+="                  <option value='6' " + ((byteToHexStringRange(dataBlock,6,7) == "08" ) ? String("selected") : String("")) + ">Album from-to</option>\n";
+    htmlDataconf+="                  <option value='7' " + ((byteToHexStringRange(dataBlock,6,7) == "09" ) ? String("selected") : String("")) + ">Party from-to</option>\n";
+    htmlDataconf+="                  <option value='8' " + ((byteToHexStringRange(dataBlock,5,6) == "00" ) ? String("selected") : String("")) + ">Special card</option>\n";
+    htmlDataconf+="                </select>\n";
+    htmlDataconf+="              </td><td>\n";
+    htmlDataconf+="                      <input type='text' id='input_title1' name='title' value='" + hextodec(byteToHexStringRange(dataBlock,7,8)) + "' size='2' maxlength='3' style='display: " + ((byteToHexStringRange(dataBlock,6,7) == "04" ) ? String("inline") : String("none")) +  ";'> <div id='input_title2' style='display: " + ((byteToHexStringRange(dataBlock,6,7) == "04" ) ? String("inline") : String("none")) +  ";'>(1-255)</div>\n";
+    htmlDataconf+="                    <select id='select_admincard' name='admincardtype' style='display: " + ((byteToHexStringRange(dataBlock,5,6) == "00" ) ? String("inline") : String("none")) + ";' onchange='einblenden()'>\n";
+    htmlDataconf+="                      <option value='0' " + ((byteToHexStringRange(dataBlock,5,7) == "0000") ? String("selected") : String("")) + ">Admin Menü</option>\n";
+    htmlDataconf+="                      <option value='1' " + ((byteToHexStringRange(dataBlock,5,7) == "0001") ? String("selected") : String("")) + ">Sleep mode</option>\n";
+    htmlDataconf+="                      <option value='2' " + ((byteToHexStringRange(dataBlock,5,7) == "0002") ? String("selected") : String("")) + ">Stop dance</option>\n";
+    htmlDataconf+="                      <option value='3' " + ((byteToHexStringRange(dataBlock,5,7) == "0003") ? String("selected") : String("")) + ">Lock</option>\n";
+    htmlDataconf+="                      <option value='4' " + ((byteToHexStringRange(dataBlock,5,7) == "0004") ? String("selected") : String("")) + ">Toddler mode</option>\n";
+    htmlDataconf+="                      <option value='5' " + ((byteToHexStringRange(dataBlock,5,7) == "0005") ? String("selected") : String("")) + ">Kindergarten mode</option>\n";
+    htmlDataconf+="                      <option value='6' " + ((byteToHexStringRange(dataBlock,5,7) == "0006") ? String("selected") : String("")) + ">Repeat title</option>\n";
+    htmlDataconf+="                      <option value='7' " + ((byteToHexStringRange(dataBlock,5,7) == "0007") ? String("selected") : String("")) + ">Audio-Feedback</option>\n";
+    htmlDataconf+="                    </select>\n";
+    htmlDataconf+="                    <input type='text' id='input_titleA1' name='titlefrom' value='" + hextodec(byteToHexStringRange(dataBlock,7,8)) + "' size='2' maxlength='3' style='display: " + ((byteToHexStringRange(dataBlock,6,7) == "07" ) || (byteToHexStringRange(dataBlock,6,7) == "08" ) || (byteToHexStringRange(dataBlock,6,7) == "09" ) ? String("inline") : String("none")) +  ";'> <div id='input_titleA2' style='display: " + ((byteToHexStringRange(dataBlock,6,7) == "07" ) || (byteToHexStringRange(dataBlock,6,7) == "08" ) || (byteToHexStringRange(dataBlock,6,7) == "09" ) ? String("inline") : String("none")) +  ";'>(1-255)</div>\n";
+    htmlDataconf+="                  </td><td>\n";
+    htmlDataconf+="                    <input type='text' id='input_time1' name='sleeptime' value='" + hextodec(byteToHexStringRange(dataBlock,7,8)) + "' size='1' maxlength='2' style='display: " + ((byteToHexStringRange(dataBlock,5,7) == "0001" ) ? String("inline") : String("none")) + ";'> <div id='input_time2' style='display: " + ((byteToHexStringRange(dataBlock,5,7) == "0001" ) ? String("inline") : String("none")) + ";'>(1-99 min)</div>\n";
+    htmlDataconf+="                    <input type='text' id='input_titleB1' name='titletill' value='" + hextodec(byteToHexStringRange(dataBlock,8,9)) + "' size='1' maxlength='3' style='display: " + ((byteToHexStringRange(dataBlock,6,7) == "07" ) || (byteToHexStringRange(dataBlock,6,7) == "08" ) || (byteToHexStringRange(dataBlock,6,7) == "09" ) ? String("inline") : String("none")) +  ";'> <div id='input_titleB2' style='display: " + ((byteToHexStringRange(dataBlock,6,7) == "07" ) || (byteToHexStringRange(dataBlock,6,7) == "08" ) || (byteToHexStringRange(dataBlock,6,7) == "09" ) ? String("inline") : String("none")) +  ";'>(1-255)</div>\n";
+    htmlDataconf+="                  </td><td>\n";
+    htmlDataconf+="                        <div id='hoerspiel' style='display: " + ((byteToHexStringRange(dataBlock,6,7) == "01" ) && (byteToHexStringRange(dataBlock,5,6) != "00" ) ? String("inline") : String("none")) + ";'>\n";
+    htmlDataconf+="                        A random track from the selected folder is played.\n";
+    htmlDataconf+="                        </div>\n";
+    htmlDataconf+="                        <div id='album' style='display: " + ((byteToHexStringRange(dataBlock,6,7) == "02" ) && (byteToHexStringRange(dataBlock,5,6) != "00" ) ? String("inline") : String("none")) + ";'>\n";
+    htmlDataconf+="                        Plays all tracks in the folder in numerical order.\n";
+    htmlDataconf+="                        </div>\n";
+    htmlDataconf+="                        <div id='party' style='display: " + ((byteToHexStringRange(dataBlock,6,7) == "03" ) && (byteToHexStringRange(dataBlock,5,6) != "00" ) ? String("inline") : String("none")) + ";'>\n";
+    htmlDataconf+="                        Plays random tracks in the folder in an endless loop.\n";
+    htmlDataconf+="                        </div>\n";
+    htmlDataconf+="                        <div id='einzel' style='display: " + ((byteToHexStringRange(dataBlock,6,7) == "04" ) && (byteToHexStringRange(dataBlock,5,6) != "00" ) ? String("inline") : String("none")) + ";'>\n";
+    htmlDataconf+="                        Plays file xxx.mp3.\n";
+    htmlDataconf+="                        </div>\n";
+    htmlDataconf+="                        <div id='hoerbuch' style='display: " + ((byteToHexStringRange(dataBlock,6,7) == "05" ) && (byteToHexStringRange(dataBlock,5,6) != "00" ) ? String("inline") : String("none")) + ";'>\n";
+    htmlDataconf+="                        Plays all the tracks in the folder in numerical order and saves progress so that the next time you use the card, it will start from the current track.\n";
+    htmlDataconf+="                        </div>\n";
+    htmlDataconf+="                        <div id='hoerspielvonbis' style='display: " + ((byteToHexStringRange(dataBlock,6,7) == "07" ) && (byteToHexStringRange(dataBlock,5,6) != "00" ) ? String("inline") : String("none")) + ";'>\n";
+    htmlDataconf+="                        A random track in the selected folder between from and to is played.\n";
+    htmlDataconf+="                        </div>\n";
+    htmlDataconf+="                        <div id='albumvonbis' style='display: " + ((byteToHexStringRange(dataBlock,6,7) == "08" ) && (byteToHexStringRange(dataBlock,5,6) != "00" ) ? String("inline") : String("none")) + ";'>\n";
+    htmlDataconf+="                        Plays all tracks in the folder between from and to in numerical order.\n";
+    htmlDataconf+="                        </div>\n";
+    htmlDataconf+="                        <div id='partyvonbis' style='display: " + ((byteToHexStringRange(dataBlock,6,7) == "09" ) && (byteToHexStringRange(dataBlock,5,6) != "00" ) ? String("inline") : String("none")) + ";'>\n";
+    htmlDataconf+="                        Plays random tracks in the folder between from and to in an endless loop.\n";
+    htmlDataconf+="                        </div>\n";
+    htmlDataconf+="                        <div id='Sonder' style='display: " + ((byteToHexStringRange(dataBlock,5,6) == "00" ) ? String("inline") : String("none")) + ";'>\n";
+    htmlDataconf+="                        This is a special card\n";
+    htmlDataconf+="                        </div>\n";
+    htmlDataconf+="                  </td></tr>\n";
+    htmlDataconf+="            <tr><td colspan='5' class='text-center'><em> <button type='submit' class='btn btn-sm btn-success'>Write Card</button> <a href='/tonuino' class='btn btn-sm btn-warning'>Read card</a>  <a href='/' class='btn btn-sm btn-primary'>Cancel</a></em></td></tr>\n";    
+  }    
   htmlDataconf+="            </tbody></table>\n";
-  htmlDataconf+="          </div></div>\n";
-  
+  htmlDataconf+="          </div></div>\n";  
   htmlDataconf+=htmlFooter;
   
-  httpServer.send(200, "text/html; charset=utf-8", htmlDataconf);
+  httpServer.send(200, "text/html; charset=UTF-8", htmlDataconf);
   httpServer.client().stop(); 
 }
 
@@ -868,7 +1045,7 @@ void Handle_ota(){
   
   htmlDataMain+=htmlFooter;
 
-  httpServer.send(200, "text/html; charset=utf-8", htmlDataMain);
+  httpServer.send(200, "text/html; charset=UTF-8", htmlDataMain);
   httpServer.client().stop();  
 }
 
@@ -886,9 +1063,14 @@ void Handle_welcome(){
   htmlDataMain+="        <div class='col-md-12'>\n";
   htmlDataMain+="          <h3>Tonuino Tag Writer</h3><br>\n";
   htmlDataMain+="          MFRC522 Firmware: " + getmfrc522fwversion() + "<br>";
-  htmlDataMain+="           Possible URL Prefix:<br>\n";
+  if (de_enabled) {  
+    htmlDataMain+="           Mögliche URL-Pfade:<br>\n"; // Bezeichner?
+  }
+  else {
+    htmlDataMain+="           Possible URL paths:<br>\n"; // identifier?
+  }
   htmlDataMain+="           <a href='http://" + ipToString(WiFi.localIP()) + ":80/reboot'>/reboot</a><br>\n";
-  htmlDataMain+="           /clearconfig<br>\n";
+//  htmlDataMain+="           /clearconfig<br>\n";
   htmlDataMain+="           <a href='http://" + ipToString(WiFi.localIP()) + ":80/freemem'>/freemem</a><br>\n";
   htmlDataMain+="           <a href='http://" + ipToString(WiFi.localIP()) + ":80/config'>/config</a><br>\n";
   htmlDataMain+="           <a href='http://" + ipToString(WiFi.localIP()) + ":80/dump'>/dump</a><br>\n";
@@ -897,7 +1079,7 @@ void Handle_welcome(){
   
   htmlDataMain+=htmlFooter;
 
-  httpServer.send(200, "text/html; charset=utf-8", htmlDataMain);
+  httpServer.send(200, "text/html; charset=UTF-8", htmlDataMain);
   httpServer.client().stop();  
 }
 
@@ -929,7 +1111,12 @@ void Handle_dump(){
   }
 
   if (card == 0) {
-    htmlDataMain+="           Keine Karte aufgelegt!<br>";
+    if (de_enabled) {
+      htmlDataMain+="           Keine Karte aufgelegt!<br>";
+    }
+    else {
+      htmlDataMain+="           No card presented!<br>";
+    }
   }
   else {
     htmlDataMain+="           Card Type: " + getchipcardtype() + "<br>";
@@ -961,7 +1148,7 @@ void Handle_dump(){
   // Stop encryption on PCD
   mfrc522.PCD_StopCrypto1();
 
-  httpServer.send(200, "text/html; charset=utf-8", htmlDataMain);
+  httpServer.send(200, "text/html; charset=UTF-8", htmlDataMain);
   httpServer.client().stop();  
 }
 
@@ -982,9 +1169,14 @@ String getmfrc522fwversion() {
     case 0x12: s = "counterfeit chip";     break;
     default:   s = "(unknown)";
   }
-  // When 0x00 or 0xFF is returned, communication probably failed
+  // If 0x00 or 0xFF is returned, communication probably failed
   if ((v == 0x00) || (v == 0xFF))
-    s = "WARNING: Communication failure, is the MFRC522 properly connected?";
+    if (de_enabled) {
+      s = "WARNUNG: Kommunikation fehlgeschlagen, ist der MFRC522 Leser korrekt verbunden?";
+    }
+    else {
+      s = "WARNING: Communication failure, is the MFRC522 reader properly connected?";
+    }
   
   return s;
 }
@@ -1067,8 +1259,6 @@ void readblock(int sector, int block) {
         }
       }
       // http://arduino.stackexchange.com/a/14316
-      //mfrc522.PICC_IsNewCardPresent();
-     // mfrc522.PICC_ReadCardSerial();
   }
 }
 
@@ -1087,18 +1277,18 @@ void writeblock(int sector, int block) {
     }
     status = (MFRC522::StatusCode) mfrc522.PCD_Authenticate(MFRC522::PICC_CMD_MF_AUTH_KEY_A, sector*4+3, &key, &(mfrc522.uid));
     if (status != MFRC522::STATUS_OK) {
-      DEBUG_PRINTLN("RFID: wrong write key");
+      DEBUG_PRINTLN("[1280] RFID: wrong write key");
       DEBUG_PRINTLN(mfrc522.GetStatusCodeName(status));
     }
     else {
-      DEBUG_PRINTLN("RFID: key accepted");
+      DEBUG_PRINTLN("[1284] RFID: key accepted");
       // Write data to the block
       status = (MFRC522::StatusCode) mfrc522.MIFARE_Write(sector*4+block, dataBlock, 16);
       if (status != MFRC522::STATUS_OK) {
-        DEBUG_PRINTLN("RFID: data can not be written");
+        DEBUG_PRINTLN("[1288] RFID: data can not be written");
       }
       else {
-        DEBUG_PRINTLN("RFID: data written");
+        DEBUG_PRINTLN("[1291] RFID: data written");
         break;
       }
     }
@@ -1121,7 +1311,7 @@ String byteToHexStringRange(byte* data, byte firstbyte, byte lastbyte)
     str[j * 2 + 1] = getHexDigit(digit);
     j++;
   }
-  DEBUG_PRINT("byteToHexStringRange: ");
+  DEBUG_PRINT("[1314] byteToHexStringRange: ");
   DEBUG_PRINTLN(str);
   return String(str);
 }
@@ -1221,8 +1411,6 @@ byte nibble(char c)
 }
 
 
-
-
 // **************************************************************************
 //  Setup
 // **************************************************************************
@@ -1237,28 +1425,32 @@ void setup(void){
   SPI.begin();
   
   pinMode(CLEAR_BTN, INPUT_PULLUP);
+//  pinMode(IRQ_PIN, INPUT_PULLUP);
 
-  DEBUG_PRINTLN("configured pinModes");
+  Serial.println(F("End setup"));
+
+
+  DEBUG_PRINTLN("[1433] configured pinModes");
 
   WiFiManager wifiManager;
   if (digitalRead(CLEAR_BTN) == LOW) wifiManager.resetSettings();   // Clear WIFI data if CLEAR Button is pressed during boot
 
-  wifiManager.setAPCallback(configModeCallback);          // set callback that gets called when connecting to previous WiFi fails, and enters Access Point mode
-  wifiManager.setSaveConfigCallback(saveConfigCallback);  // set config save notify callback
+  wifiManager.setAPCallback(configModeCallback);                    // set callback that gets called when connecting to previous WiFi fails, and enters Access Point mode
+  wifiManager.setSaveConfigCallback(saveConfigCallback);            // set config save notify callback
   
-  if (SPIFFS.begin(true)) {                                   // Mounting File System, true because of formatOnFail
-    DEBUG_PRINTLN("mounted file system");
+  if (SPIFFS.begin(true)) {                                         // Mounting File System, true because of formatOnFail
+    DEBUG_PRINTLN("[1442] mounted file system");
     if (!loadConfig()) {
-      DEBUG_PRINTLN("Failed to load config");
+      DEBUG_PRINTLN("[1444] Failed to load config");
     } else {
-      DEBUG_PRINTLN("Config loaded");
+      DEBUG_PRINTLN("[1446] Config loaded");
     }
   }
   else {
-    DEBUG_PRINTLN("failed to mount FS");
+    DEBUG_PRINTLN("[1450] failed to mount FS");
   }
 
-  //if (host_name[0] == 0 ) sprintf(host_name, "IPC-%d",ESP.getChipId());     //set default hostname when not set!
+  // if (host_name[0] == 0 ) sprintf(host_name, "IPC-%d",ESP.getChipId());     //set default hostname when not set!
   if (host_name[0] == 0 ) sprintf(host_name, "TTW-01");     //set default hostname when not set!
 
   // Configure some additional 
@@ -1267,7 +1459,7 @@ void setup(void){
   WiFiManagerParameter custom_ntpserver("ntpserver", "NTP Server (optional):", ntpserver, 30);
   wifiManager.addParameter(&custom_ntpserver);
 
-  //String autoconf_ssid = "TTW_Config_"+String(ESP.getChipId());
+  // String autoconf_ssid = "TTW_Config_"+String(ESP.getChipId());
   String autoconf_ssid = "TTW_Config_";
   wifiManager.setConnectTimeout(60);                                  // Workaround Test for reconnect issue
   wifiManager.setConfigPortalTimeout(120);                            // Timeout for SoftAP, try connect again to stored wlan
@@ -1277,11 +1469,11 @@ void setup(void){
   strncpy(host_name, custom_hostname.getValue(), 20);
   strncpy(ntpserver, custom_ntpserver.getValue(), 30);
 
-  DEBUG_PRINTLN("WiFi connected! IP: " + ipToString(WiFi.localIP()) + " Hostname: " + String(host_name) + " NTP-Server: " + String(ntpserver));
+  DEBUG_PRINTLN("[1472] WiFi connected! IP: " + ipToString(WiFi.localIP()) + " Hostname: " + String(host_name) + " NTP-Server: " + String(ntpserver));
 
   // save the custom parameters to FS
   if (shouldSaveConfig) {
-    DEBUG_PRINTLN(" config...");
+    DEBUG_PRINTLN(" [1476] config...");
     DynamicJsonBuffer jsonBuffer;
     JsonObject& json = jsonBuffer.createObject();
     json["hostname"] = host_name;
@@ -1289,23 +1481,23 @@ void setup(void){
 
     File configFile = SPIFFS.open("/config.json", "w");
     if (!configFile) {
-      DEBUG_PRINTLN("SPI: failed to open config file for writing config");
+      DEBUG_PRINTLN("[1484] SPI: failed to open config file for writing config");
     }
     #ifdef DEBUG
       json.printTo(Serial);
     #endif
-    DEBUG_PRINTLN("");
+    DEBUG_PRINTLN("[1489]");
     json.printTo(configFile);
     configFile.close();
   }
 
-  //if (host_name[0] == 0 ) sprintf(host_name, "IPC-%d",ESP.getChipId());             //set default hostname when not set!
+  // if (host_name[0] == 0 ) sprintf(host_name, "IPC-%d",ESP.getChipId());             // set default hostname when not set!
   if (host_name[0] == 0 ) sprintf(host_name, "TTW-01");
-  if (ntpserver[0] == 0 ) strncpy(ntpserver, poolServerName, 30);                   //set default ntp server when not set!
+  if (ntpserver[0] == 0 ) strncpy(ntpserver, poolServerName, 30);                   // set default ntp server when not set!
   
   // Enable the Free Memory Page
   httpServer.on("/freemem", []() {
-    DEBUG_PRINTLN("WEB: Connection received: /freemem : ");
+    DEBUG_PRINTLN("[1500] WEB: Connection established: /freemem : ");
     DEBUG_PRINT(ESP.getFreeSketchSpace());
     httpServer.sendHeader("Connection", "close");
     httpServer.send(200, "text/plain", String(ESP.getFreeSketchSpace()).c_str());
@@ -1332,46 +1524,46 @@ void setup(void){
   }, []() {
     HTTPUpload& upload = httpServer.upload();
     if (upload.status == UPLOAD_FILE_START) {
-      //Serial.setDebugOutput(true);
-      //Serial.printf("Update: %s\n", upload.filename.c_str());
-      if (!Update.begin()) { //start with max available size
-        //Update.printError(Serial);
+      // Serial.setDebugOutput(true);
+      // Serial.printf("Update: %s\n", upload.filename.c_str());
+      if (!Update.begin()) { // start with max available size
+        // Update.printError(Serial);
       }
     } else if (upload.status == UPLOAD_FILE_WRITE) {
       if (Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
-        //Update.printError(Serial);
+        // Update.printError(Serial);
       }
     } else if (upload.status == UPLOAD_FILE_END) {
-      if (Update.end(true)) { //true to set the size to the current progress
-        //Serial.printf("Update Success: %u\nRebooting...\n", upload.totalSize);
+      if (Update.end(true)) { // true to set the size to the current progress
+        // Serial.printf("Update Success: %u\nRebooting...\n", upload.totalSize);
       } else {
-        //Update.printError(Serial);
+        // Update.printError(Serial);
       }
-      //Serial.setDebugOutput(false);
+      // Serial.setDebugOutput(false);
     } else {
-      DEBUG_PRINTLN("Update Failed Unexpectedly (likely broken connection)");
+      DEBUG_PRINTLN("[1544] Update Failed Unexpectedly (likely broken connection)");
     }
   });
     
   httpServer.begin();                                   // Enable the WebServer
   
-  //setTime(1514764800);  // 1.1.2018 00:00 Initialize time
+  // setTime(1514764800);  // 1.1.2018 00:00 Initialize time
   if (ntp_enabled) {
-      DEBUG_PRINTLN("NTP: Starting UDP");
+      DEBUG_PRINTLN("[1552] NTP: Starting UDP");
       Udp.begin(NtpLocalPort);
-      DEBUG_PRINT("NTP: Local port: ");
-      //DEBUG_PRINTLN(Udp.localPort());
-      DEBUG_PRINTLN("NTP: waiting for sync");
+      DEBUG_PRINT("[1554] NTP: Local port: ");
+      // DEBUG_PRINTLN(Udp.localPort());
+      DEBUG_PRINTLN("[1556] NTP: waiting for sync");
       setSyncProvider(getNtpTime);                       // set the external time provider
       setSyncInterval(3600);                             // set the number of seconds between re-sync
-      //String boottimetemp = printDigits2(hour()) + ":" + printDigits2(minute()) + " " + printDigits2(day()) + "." + printDigits2(month()) + "." + String(year());
-      //strncpy(boottime, boottimetemp.c_str(), 20);           // If we got time set boottime
+      // String boottimetemp = printDigits2(hour()) + ":" + printDigits2(minute()) + " " + printDigits2(day()) + "." + printDigits2(month()) + "." + String(year());
+      // strncpy(boottime, boottimetemp.c_str(), 20);           // If we got time set boottime
   }
 
   mfrc522.PCD_Init();   // Init MFRC522
   delay(4);             // Wait for MFRC522 Board
 
-  DEBUG_PRINTLN("Startup completed ...");
+  DEBUG_PRINTLN("[1566] Startup completed ...");
 }
 
 
