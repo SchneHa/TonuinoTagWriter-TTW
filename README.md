@@ -8,6 +8,7 @@ Forked from Daniel Wilhelm, debugging and improvements by Hans Schneider
 
 Hardware:
 - ESP32 Dev Module
+- RFID-RC522 Reader
 
 Arduino config:
 - 4M (190KB SPIFFS with OTA)
