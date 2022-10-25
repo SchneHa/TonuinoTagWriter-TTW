@@ -16,7 +16,7 @@ Hardware:
 - TP4056 Li-Po charging module (you have to modify the module to charge with not more than max. current for your battery)
 - Li-Po battery 3,7V / 500mAh or more
 - Switch 2x 1-0-1
-- Enclosure can even be found on http://itse.homeip.net/projekte/13/
+- Enclosure (can even be found on http://itse.homeip.net/projekte/13/)
 
 Arduino config:
 - 4M (190KB SPIFFS with OTA)
