@@ -1,15 +1,15 @@
 # TonUINOTagWriter
 
-Pocket device to read and write NFC tags for TonUINO project\r
-You can find the TonUINO project at https://www.voss.earth\r
+Pocket device to read and write NFC tags for TonUINO project \r
+You can find the TonUINO project at https://www.voss.earth \r
 Forked from Daniel Wilhelm, debugging and improvements by Hans Schneider
 
-Hardware:\r
-ESP32 Dev Module\r
+Hardware: \r
+ESP32 Dev Module \r
 
-Arduino config:\r
-4M (190KB SPIFFS with OTA)\r
-240MHz\r
+Arduino config: \r
+4M (190KB SPIFFS with OTA) \r
+240MHz \r
 
 Version:\r
 0.1.0 First stable working version\r
