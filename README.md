@@ -12,23 +12,29 @@ Arduino config:
 240MHz
 
 Version:
-
 0.1.0 First stable working version
-
 0.1.2 Bug: show right input options after read card
-
 0.1.3 Ability to switch to German language in configuration 2022-02-29
 
 
 ESP32 connections to NFC reader:
+
 ESP32 <->  RC522:
+
 3.3V  <->  3.3V
+
 GND   <->  GND
+
 D2    <->  RST
+
 D18   <->  SCK
+
 D19   <->  MISO
+
 D21   <->  SDA
+
 D23   <->  MOSI
+
 D22   <->  IRQ // Currently not used
 
 Used libraries:
