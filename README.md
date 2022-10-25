@@ -11,10 +11,10 @@ Arduino config:
 4M (190KB SPIFFS with OTA)
 240MHz
 
-Version:
-0.1.0 First stable working version
-0.1.2 Bug: show right input options after read card
-0.1.3 Ability to switch to German language in configuration 2022-02-29
+Version: 
+0.1.0 First stable working version 
+0.1.2 Bug: show right input options after read card 
+0.1.3 Ability to switch to German language in configuration 2022-02-29 
 
 
 ESP32 connections to NFC reader:
