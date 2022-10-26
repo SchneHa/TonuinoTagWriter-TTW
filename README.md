@@ -11,7 +11,7 @@ Daniel's project site: http://itse.homeip.net/projekte/13/
 Reading and writing tags using an implemented webserver. You can also do a firmware update OTA (over the air), edit the hostname, use a NTP server to get correct timestamps and switch between English and German language. All in a handy small device with builtin battery and charging circuit.
 
 Hardware:
-- ESP32 Dev Module
+- ESP32 Dev Module (board version ESP32 2.0.1)
 - RFID-RC522 Reader
 - TP4056 Li-Po charging module (you have to modify the module to charge with not more than max. current for your battery)
 - Li-Po battery 3,7V / 500mAh or more
