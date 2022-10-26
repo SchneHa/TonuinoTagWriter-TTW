@@ -51,7 +51,7 @@ Used libraries:
 
 
 
-![TTW](https://user-images.githubusercontent.com/6528455/197866958-0fe1d69b-212d-4710-95c0-6898d25316dc.jpg)
+![TTW](https://user-images.githubusercontent.com/6528455/198009508-6984d191-1b56-4b9f-badf-1d03a26bfedd.jpg)
 
 
 
@@ -69,5 +69,4 @@ After flashing firmware the first time using Arduino IDE the TonuinoTagWriter pr
 ![IMG_2523](https://user-images.githubusercontent.com/6528455/197996168-538c36b9-d9b7-47e0-87dd-239a7a970c85.JPG)
 
 ![IMG_2524](https://user-images.githubusercontent.com/6528455/197996297-4f98bebc-fe15-499a-8730-251126b0a820.JPG)
-
 
