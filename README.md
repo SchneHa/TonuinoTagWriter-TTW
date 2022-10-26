@@ -55,3 +55,4 @@ Used libraries:
 
 
 
+After flashing firmware the first time using Arduino IDE the TonuinoTagWriter provides an access point named TTW_Config_xxxx where 'xxx' is the chipID of your board. You have to connect to that WiFi from your PC or mobile device. Then the TonuinoTagWriter is accessible using the IP-address 192.168.4.1. After that you can choose your own WiFi to connect to. Further you have access to TonuinoTagWriter using default hostname TTW-01 (you can change in configuration menu).
