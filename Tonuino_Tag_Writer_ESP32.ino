@@ -661,8 +661,6 @@ void Handle_tonuino(){
     // Look for new cards
 
     bool card = 0;
-    strDataBlock = "00000000000000000000000000000000";
-    hexCharacterStringToBytes(dataBlock, strDataBlock.c_str());
     if (mfrc522.PICC_IsNewCardPresent()) 
     {
       card = 1;
@@ -674,8 +672,6 @@ void Handle_tonuino(){
     }
 
     if (card == 0) {
-      strDataBlock = "00000000000000000000000000000000";
-      hexCharacterStringToBytes(dataBlock, strDataBlock.c_str());
       DEBUG_PRINTLN("[0679] RFID: No card presented!");
       if (de_enabled) {
         sendControlPage("Keine Karte aufgelegt! Werte unten stammen nicht von einer Karte!", "Warnung!", 2, 200);
@@ -799,8 +795,6 @@ void Handle_tonuino(){
     
     // Look for new cards
     bool card = 0;
-    strDataBlock = "00000000000000000000000000000000";
-    hexCharacterStringToBytes(dataBlock, strDataBlock.c_str());
     if (mfrc522.PICC_IsNewCardPresent()) 
     {
       card = 1;
@@ -819,24 +813,20 @@ void Handle_tonuino(){
       else {
         sendControlPage("No card presented!", "Error!", 3, 200);
       }
-      strDataBlock = "00000000000000000000000000000000";
-      hexCharacterStringToBytes(dataBlock, strDataBlock.c_str());
     }
     else {
       // Write the block to the card
-      writeblock(1, 0);        
-      // Halt PICC
-      mfrc522.PICC_HaltA();
-      // Stop encryption on PCD
-      mfrc522.PCD_StopCrypto1();
+        writeblock(1, 0);       
+        // Halt PICC
+        mfrc522.PICC_HaltA();
+        // Stop encryption on PCD
+        mfrc522.PCD_StopCrypto1(); 
       if (de_enabled) {
         sendControlPage("Neue Werte (" + byteToHexString(dataBlock,sizeof(dataBlock)) + ") auf die Karte geschrieben!", "Erfolg!", 1, 200);
       }
       else {
         sendControlPage("New values (" + byteToHexString(dataBlock,sizeof(dataBlock)) + ") written to card!", "Success!", 1, 200);
       }
-      strDataBlock = "00000000000000000000000000000000";
-      hexCharacterStringToBytes(dataBlock, strDataBlock.c_str());
     }
   }
 }
