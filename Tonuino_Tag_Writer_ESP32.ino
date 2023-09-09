@@ -4,7 +4,7 @@
 //
 // Hardware: ESP32 Dev Module
 // 
-// Arduino IDE 1.8.15
+// Arduino IDE 1.8.19
 // 
 // ESP32 2.0.1
 // 
@@ -672,7 +672,7 @@ void Handle_tonuino(){
     }
 
     if (card == 0) {
-      DEBUG_PRINTLN("[0679] RFID: No card presented!");
+      DEBUG_PRINTLN("[0675] RFID: No card presented!");
       if (de_enabled) {
         sendControlPage("Keine Karte aufgelegt! Werte unten stammen nicht von einer Karte!", "Warnung!", 2, 200);
       }
@@ -695,7 +695,7 @@ void Handle_tonuino(){
     }  
   } 
   else {
-    DEBUG_PRINTLN("[0702] WEB: Connection established - /tonuino (write card)");
+    DEBUG_PRINTLN("[0698] WEB: Connection established - /tonuino (write card)");
     // generate the Tonuino MiFare sector 1 block 0
     strDataBlock = httpServer.arg(0);
     if (httpServer.arg(1).length() == 1) strDataBlock += "0";     // "1" -> "01"
@@ -790,7 +790,7 @@ void Handle_tonuino(){
 
     strDataBlock += "00";
     
-    // convert the hex har array to hex byte array
+    // convert the hex char array to hex byte array
     hexCharacterStringToBytes(dataBlock, strDataBlock.c_str());
     
     // Look for new cards
@@ -806,7 +806,7 @@ void Handle_tonuino(){
     }
 
     if (card == 0) {
-      DEBUG_PRINTLN("[0815] RFID: No card presented!");
+      DEBUG_PRINTLN("[0809] RFID: No card presented!");
       if (de_enabled) {
         sendControlPage("Keine Karte aufgelegt!", "Fehler!", 3, 200);
       }
@@ -836,7 +836,7 @@ void sendControlPage(String message, String header, int type, int httpcode)
 {
   if (type == 1) {                                               // Type 1
 //    String message = "WEB: Neue Werte gesetzt über die control page: ";
-    String message = "[0849] WEB: Set new values using control page: ";
+    String message = "[0839] WEB: Set new values using control page: ";
     message += String(httpServer.args()) + "\n";
     for (int i = 0; i < httpServer.args(); i++) {
       message += "Arg " + (String)i + " -> ";
@@ -870,7 +870,7 @@ void sendControlPage(String message, String header, int type, int httpcode)
     htmlDataconf+="          <table class='table table-striped' style='table-layout: fixed;'>\n";
     htmlDataconf+="            <thead><tr><th>Option</th><th colspan='3'>Werte</th><th>Kommentare</th></tr></thead>\n";
     htmlDataconf+="            <tbody>\n";
-    htmlDataconf+="              <tr><td>Magic Number</td><td><input type='text' id='magicnumber_set' name='magicnumber_set' size='6' maxlength='8' value='" + byteToHexStringRange(dataBlock,0,4) + "'></td><td></td><td></td><td>Nummer muss mit dem Tonuino übereinstimmen, default ist 1337B347</td></tr>\n";
+    htmlDataconf+="              <tr><td>Magic Number</td><td><input type='text' id='magicnumber_set' name='magicnumber_set' size='6' maxlength='9' value='" + byteToHexStringRange(dataBlock,0,4) + "'></td><td></td><td></td><td>Nummer muss mit dem Tonuino übereinstimmen, default ist 1337B347</td></tr>\n";
     htmlDataconf+="              <tr><td>Version</td><td>";
     htmlDataconf+="                <select name='version_set' size='1'>\n";
     htmlDataconf+="                  <option " + ((byteToHexStringRange(dataBlock,4,5) == "01" ) ? String("selected") : String("")) + ">1</option>\n";
@@ -1267,18 +1267,18 @@ void writeblock(int sector, int block) {
     }
     status = (MFRC522::StatusCode) mfrc522.PCD_Authenticate(MFRC522::PICC_CMD_MF_AUTH_KEY_A, sector*4+3, &key, &(mfrc522.uid));
     if (status != MFRC522::STATUS_OK) {
-      DEBUG_PRINTLN("[1280] RFID: wrong write key");
+      DEBUG_PRINTLN("[1270] RFID: wrong write key");
       DEBUG_PRINTLN(mfrc522.GetStatusCodeName(status));
     }
     else {
-      DEBUG_PRINTLN("[1284] RFID: key accepted");
+      DEBUG_PRINTLN("[1274] RFID: key accepted");
       // Write data to the block
       status = (MFRC522::StatusCode) mfrc522.MIFARE_Write(sector*4+block, dataBlock, 16);
       if (status != MFRC522::STATUS_OK) {
-        DEBUG_PRINTLN("[1288] RFID: data can not be written");
+        DEBUG_PRINTLN("[1278] RFID: data can not be written");
       }
       else {
-        DEBUG_PRINTLN("[1291] RFID: data written");
+        DEBUG_PRINTLN("[1281] RFID: data written");
         break;
       }
     }
@@ -1301,7 +1301,7 @@ String byteToHexStringRange(byte* data, byte firstbyte, byte lastbyte)
     str[j * 2 + 1] = getHexDigit(digit);
     j++;
   }
-  DEBUG_PRINT("[1314] byteToHexStringRange: ");
+  DEBUG_PRINT("[1304] byteToHexStringRange: ");
   DEBUG_PRINTLN(str);
   return String(str);
 }
@@ -1420,7 +1420,7 @@ void setup(void){
   Serial.println(F("End setup"));
 
 
-  DEBUG_PRINTLN("[1433] configured pinModes");
+  DEBUG_PRINTLN("[1423] configured pinModes");
 
   WiFiManager wifiManager;
   if (digitalRead(CLEAR_BTN) == LOW) wifiManager.resetSettings();   // Clear WIFI data if CLEAR Button is pressed during boot
@@ -1429,15 +1429,15 @@ void setup(void){
   wifiManager.setSaveConfigCallback(saveConfigCallback);            // set config save notify callback
   
   if (SPIFFS.begin(true)) {                                         // Mounting File System, true because of formatOnFail
-    DEBUG_PRINTLN("[1442] mounted file system");
+    DEBUG_PRINTLN("[1432] mounted file system");
     if (!loadConfig()) {
-      DEBUG_PRINTLN("[1444] Failed to load config");
+      DEBUG_PRINTLN("[1434] Failed to load config");
     } else {
-      DEBUG_PRINTLN("[1446] Config loaded");
+      DEBUG_PRINTLN("[1436] Config loaded");
     }
   }
   else {
-    DEBUG_PRINTLN("[1450] failed to mount FS");
+    DEBUG_PRINTLN("[1440] failed to mount FS");
   }
 
   // if (host_name[0] == 0 ) sprintf(host_name, "IPC-%d",ESP.getChipId());     //set default hostname when not set!
@@ -1459,11 +1459,11 @@ void setup(void){
   strncpy(host_name, custom_hostname.getValue(), 20);
   strncpy(ntpserver, custom_ntpserver.getValue(), 30);
 
-  DEBUG_PRINTLN("[1472] WiFi connected! IP: " + ipToString(WiFi.localIP()) + " Hostname: " + String(host_name) + " NTP-Server: " + String(ntpserver));
+  DEBUG_PRINTLN("[1462] WiFi connected! IP: " + ipToString(WiFi.localIP()) + " Hostname: " + String(host_name) + " NTP-Server: " + String(ntpserver));
 
   // save the custom parameters to FS
   if (shouldSaveConfig) {
-    DEBUG_PRINTLN(" [1476] config...");
+    DEBUG_PRINTLN(" [1466] config...");
     DynamicJsonBuffer jsonBuffer;
     JsonObject& json = jsonBuffer.createObject();
     json["hostname"] = host_name;
@@ -1471,12 +1471,12 @@ void setup(void){
 
     File configFile = SPIFFS.open("/config.json", "w");
     if (!configFile) {
-      DEBUG_PRINTLN("[1484] SPI: failed to open config file for writing config");
+      DEBUG_PRINTLN("[1474] SPI: failed to open config file for writing config");
     }
     #ifdef DEBUG
       json.printTo(Serial);
     #endif
-    DEBUG_PRINTLN("[1489]");
+    DEBUG_PRINTLN("[1479]");
     json.printTo(configFile);
     configFile.close();
   }
@@ -1487,7 +1487,7 @@ void setup(void){
   
   // Enable the Free Memory Page
   httpServer.on("/freemem", []() {
-    DEBUG_PRINTLN("[1500] WEB: Connection established: /freemem : ");
+    DEBUG_PRINTLN("[1490] WEB: Connection established: /freemem : ");
     DEBUG_PRINT(ESP.getFreeSketchSpace());
     httpServer.sendHeader("Connection", "close");
     httpServer.send(200, "text/plain", String(ESP.getFreeSketchSpace()).c_str());
@@ -1531,7 +1531,7 @@ void setup(void){
       }
       // Serial.setDebugOutput(false);
     } else {
-      DEBUG_PRINTLN("[1544] Update Failed Unexpectedly (likely broken connection)");
+      DEBUG_PRINTLN("[1534] Update Failed Unexpectedly (likely broken connection)");
     }
   });
     
@@ -1539,11 +1539,11 @@ void setup(void){
   
   // setTime(1514764800);  // 1.1.2018 00:00 Initialize time
   if (ntp_enabled) {
-      DEBUG_PRINTLN("[1552] NTP: Starting UDP");
+      DEBUG_PRINTLN("[1542] NTP: Starting UDP");
       Udp.begin(NtpLocalPort);
-      DEBUG_PRINT("[1554] NTP: Local port: ");
+      DEBUG_PRINT("[1544] NTP: Local port: ");
       // DEBUG_PRINTLN(Udp.localPort());
-      DEBUG_PRINTLN("[1556] NTP: waiting for sync");
+      DEBUG_PRINTLN("[1546] NTP: waiting for sync");
       setSyncProvider(getNtpTime);                       // set the external time provider
       setSyncInterval(3600);                             // set the number of seconds between re-sync
       // String boottimetemp = printDigits2(hour()) + ":" + printDigits2(minute()) + " " + printDigits2(day()) + "." + printDigits2(month()) + "." + String(year());
@@ -1553,7 +1553,7 @@ void setup(void){
   mfrc522.PCD_Init();   // Init MFRC522
   delay(4);             // Wait for MFRC522 Board
 
-  DEBUG_PRINTLN("[1566] Startup completed ...");
+  DEBUG_PRINTLN("[1556] Startup completed ...");
 }
 
 
