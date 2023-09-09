@@ -870,7 +870,7 @@ void sendControlPage(String message, String header, int type, int httpcode)
     htmlDataconf+="          <table class='table table-striped' style='table-layout: fixed;'>\n";
     htmlDataconf+="            <thead><tr><th>Option</th><th colspan='3'>Werte</th><th>Kommentare</th></tr></thead>\n";
     htmlDataconf+="            <tbody>\n";
-    htmlDataconf+="              <tr><td>Magic Number</td><td><input type='text' id='magicnumber_set' name='magicnumber_set' size='6' maxlength='9' value='" + byteToHexStringRange(dataBlock,0,4) + "'></td><td></td><td></td><td>Nummer muss mit dem Tonuino übereinstimmen, default ist 1337B347</td></tr>\n";
+    htmlDataconf+="              <tr><td>Magic Number</td><td><input type='text' id='magicnumber_set' name='magicnumber_set' size='7' maxlength='8' value='" + byteToHexStringRange(dataBlock,0,4) + "'></td><td></td><td></td><td>Nummer muss mit dem Tonuino übereinstimmen, default ist 1337B347</td></tr>\n";
     htmlDataconf+="              <tr><td>Version</td><td>";
     htmlDataconf+="                <select name='version_set' size='1'>\n";
     htmlDataconf+="                  <option " + ((byteToHexStringRange(dataBlock,4,5) == "01" ) ? String("selected") : String("")) + ">1</option>\n";
@@ -942,7 +942,7 @@ void sendControlPage(String message, String header, int type, int httpcode)
     htmlDataconf+="          <table class='table table-striped' style='table-layout: fixed;'>\n";
     htmlDataconf+="            <thead><tr><th>Option</th><th colspan='3'>Values</th><th>Comments</th></tr></thead>\n";
     htmlDataconf+="            <tbody>\n";
-    htmlDataconf+="              <tr><td>Magic Number</td><td><input type='text' id='magicnumber_set' name='magicnumber_set' size='6' maxlength='8' value='" + byteToHexStringRange(dataBlock,0,4) + "'></td><td></td><td></td><td>Number must match the Tonuino, default is 1337B347</td></tr>\n";
+    htmlDataconf+="              <tr><td>Magic Number</td><td><input type='text' id='magicnumber_set' name='magicnumber_set' size='7' maxlength='8' value='" + byteToHexStringRange(dataBlock,0,4) + "'></td><td></td><td></td><td>Number must match the Tonuino, default is 1337B347</td></tr>\n";
     htmlDataconf+="              <tr><td>Version</td><td>";
     htmlDataconf+="                <select name='version_set' size='1'>\n";
     htmlDataconf+="                  <option " + ((byteToHexStringRange(dataBlock,4,5) == "01" ) ? String("selected") : String("")) + ">1</option>\n";
