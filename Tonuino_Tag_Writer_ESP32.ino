@@ -158,10 +158,10 @@ bool loadConfig() {
   if (SPIFFS.exists("/config.json")) {
       File configFile = SPIFFS.open("/config.json", "r");
       if (configFile) {
-        DEBUG_PRINTLN("[0155] opened config file");
+        DEBUG_PRINTLN("[0161] opened config file");
         size_t size = configFile.size();
         if (size > 1024) {
-          DEBUG_PRINTLN("[0158] Config file size is too large");
+          DEBUG_PRINTLN("[0164] Config file size is too large");
           return false;
         }
         std::unique_ptr<char[]> buf(new char[size]);            // Allocate a buffer to store contents of the file.
@@ -172,19 +172,19 @@ bool loadConfig() {
           json.printTo(Serial);
         #endif
         if (json.success()) {
-          DEBUG_PRINTLN("[0169] \nparsed json");
+          DEBUG_PRINTLN("[0175] \nparsed json");
           if (json.containsKey("hostname")) strncpy(host_name, json["hostname"], 20);
           if (json.containsKey("ntpserver")) strncpy(ntpserver, json["ntpserver"], 30);
           if (json.containsKey("ntpenabled")) ntp_enabled = json["ntpenabled"];
           if (json.containsKey("deenabled")) de_enabled = json["deenabled"];
         }
         else {
-          DEBUG_PRINTLN("[0176] Failed to parse config file");
+          DEBUG_PRINTLN("[0182] Failed to parse config file");
           return false;
         }
       }
       else {
-        DEBUG_PRINTLN("[0181] Failed to open config file");
+        DEBUG_PRINTLN("[0187] Failed to open config file");
         return false;
       }
   }
@@ -197,7 +197,7 @@ bool loadConfig() {
 // **************************************************************************
 void saveConfigCallback()
 {
-  DEBUG_PRINTLN("[0194] Should save config");
+  DEBUG_PRINTLN("[0200] Should save config");
   shouldSaveConfig = true;
 }
 
@@ -207,7 +207,7 @@ void saveConfigCallback()
 // **************************************************************************
 void configModeCallback (WiFiManager *myWiFiManager)
 {
-  DEBUG_PRINTLN("[0204] Entered config mode");
+  DEBUG_PRINTLN("[0210] Entered config mode");
   DEBUG_PRINTLN(WiFi.softAPIP());
   DEBUG_PRINTLN(myWiFiManager->getConfigPortalSSID());    // if you used auto generated SSID, print it
 }
@@ -233,18 +233,18 @@ time_t getNtpTime()
   IPAddress ntpServerIP;                            // NTP server's ip address
 
   while (Udp.parsePacket() > 0) ;                   // Discard any previously received packets
-  DEBUG_PRINTLN("[0230] NTP: Transmit NTP Request");
+  DEBUG_PRINTLN("[0236] NTP: Transmit NTP Request");
   WiFi.hostByName(ntpserver, ntpServerIP);          // Lookup IP from Hostname
-  DEBUG_PRINT("[0232] NTP: ");
+  DEBUG_PRINT("[0238] NTP: ");
   DEBUG_PRINT(ntpserver);
-  DEBUG_PRINT(" [0234] IP: ");
+  DEBUG_PRINT(" [0240] IP: ");
   DEBUG_PRINTLN(ntpServerIP);
   sendNTPpacket(ntpServerIP);
   uint32_t beginWait = millis();
   while (millis() - beginWait < 1500) {
     int size = Udp.parsePacket();
     if (size >= NTP_PACKET_SIZE) {
-      DEBUG_PRINTLN("[0241] NTP: Receive NTP Response");
+      DEBUG_PRINTLN("[0247] NTP: Receive NTP Response");
       Udp.read(packetBuffer, NTP_PACKET_SIZE);      // read packet into the buffer
       unsigned long secsSince1900;
       // convert four bytes starting at location 40 to a long integer
@@ -255,7 +255,7 @@ time_t getNtpTime()
       return secsSince1900 - 2208988800UL + (timeZone * 60 * 60); // NTP Time - 70 Years + TimeZone Hours
     }
   }
-  DEBUG_PRINTLN("[0252] NTP: No NTP Response :-(");
+  DEBUG_PRINTLN("[0258] NTP: No NTP Response :-(");
   return 0;                                          // return 0 if unable to get the time
 }
 
@@ -480,11 +480,11 @@ void Handle_ClearConfig()
 void Handle_config()
 { 
   if (httpServer.method() == HTTP_GET) {
-    DEBUG_PRINTLN("[0477] WEB: Connection established - /config");
+    DEBUG_PRINTLN("[0483] WEB: Connection established - /config");
     sendConfigPage("", "", 0, 200);
   } 
   else {
-    DEBUG_PRINTLN("[0481] WEB: Connection established - /config (save)");
+    DEBUG_PRINTLN("[0487] WEB: Connection established - /config (save)");
     }
   if (de_enabled) {
     sendConfigPage("Settings erfolgreich gesichert! Bitte neu starten!", "Erfolg!", 1, 200);
@@ -502,10 +502,10 @@ void sendConfigPage(String message, String header, int type, int httpcode)
   bool deenabled_conf;
 
   if (type == 1){                                              // Type 1 -> save data
-    String message = "[0499] WEB: Number of args received: ";
+    String message = "[0505] WEB: Number of args received: ";
     message += String(httpServer.args()) + "\n";
     for (int i = 0; i < httpServer.args(); i++) {
-      message += "[0502] Arg " + (String)i + " â€“> ";
+      message += "[0508] Arg " + (String)i + " â€“> ";
       message += httpServer.argName(i) + ":" ;
       message += httpServer.arg(i) + "\n";
     }
@@ -515,7 +515,7 @@ void sendConfigPage(String message, String header, int type, int httpcode)
     if (httpServer.hasArg("ntpenabled")) {ntpenabled_conf = true;} else {ntpenabled_conf = false;}
     if (httpServer.hasArg("deenabled")) {deenabled_conf = true;} else {deenabled_conf = false;}
 
-    DEBUG_PRINT("[0512]");
+    DEBUG_PRINT("[0518]");
     DEBUG_PRINTLN(message);
 
     // validate values before saving
@@ -528,7 +528,7 @@ void sendConfigPage(String message, String header, int type, int httpcode)
     }
     if (validconf)
     {
-      DEBUG_PRINTLN("[0525] SPI: save config.json...");
+      DEBUG_PRINTLN("[0531] SPI: save config.json...");
       DynamicJsonBuffer jsonBuffer;
       JsonObject& json = jsonBuffer.createObject();
       json["hostname"] = String(host_name_conf);
@@ -538,12 +538,12 @@ void sendConfigPage(String message, String header, int type, int httpcode)
 
       File configFile = SPIFFS.open("/config.json", "w");
       if (!configFile) {
-        DEBUG_PRINTLN("[0535] SPI: failed to open config file for writing");
+        DEBUG_PRINTLN("[0541] SPI: failed to open config file for writing");
       }
       #ifdef DEBUG
         json.printTo(Serial);
       #endif
-      DEBUG_PRINTLN("[0540]");
+      DEBUG_PRINTLN("[0546]");
       json.printTo(configFile);
       configFile.close();
       // end save
@@ -551,14 +551,14 @@ void sendConfigPage(String message, String header, int type, int httpcode)
   } else {                                // Type 0 -> load data
     if (SPIFFS.begin())
     {
-      DEBUG_PRINTLN("[0548] SPI: mounted file system");
+      DEBUG_PRINTLN("[0554] SPI: mounted file system");
       if (SPIFFS.exists("/config.json"))
       {
         // file exists, reading and loading
-        DEBUG_PRINTLN("[0552] SPI: reading config file");
+        DEBUG_PRINTLN("[0558] SPI: reading config file");
         File configFile = SPIFFS.open("/config.json", "r");
         if (configFile) {
-          DEBUG_PRINTLN("[0555] SPI: opened config file");
+          DEBUG_PRINTLN("[0561] SPI: opened config file");
           size_t size = configFile.size();
           // Allocate a buffer to store contents of the file.
           std::unique_ptr<char[]> buf(new char[size]);
@@ -566,23 +566,23 @@ void sendConfigPage(String message, String header, int type, int httpcode)
           configFile.readBytes(buf.get(), size);
           DynamicJsonBuffer jsonBuffer;
           JsonObject& json = jsonBuffer.parseObject(buf.get());
-          DEBUG_PRINT("[0563] JSO: ");
+          DEBUG_PRINT("[0569] JSO: ");
           #ifdef DEBUG
             json.printTo(Serial);
           #endif
           if (json.success()) {
-            DEBUG_PRINTLN("\n[0568] JSO: parsed json");
+            DEBUG_PRINTLN("\n[0574] JSO: parsed json");
             if (json.containsKey("hostname")) strncpy(host_name_conf, json["hostname"], 20);
             if (json.containsKey("ntpserver")) strncpy(ntpserver_conf, json["ntpserver"], 30);
             if (json.containsKey("ntpenabled")) ntpenabled_conf = json["ntpenabled"];
             if (json.containsKey("deenabled")) deenabled_conf = json["deenabled"];
           } else {
-            DEBUG_PRINTLN("[0574] JSO: failed to load json config");
+            DEBUG_PRINTLN("[0580] JSO: failed to load json config");
           }
         }
       }
     } else {
-      DEBUG_PRINTLN("[0579] SPI: failed to mount FS");
+      DEBUG_PRINTLN("[0585] SPI: failed to mount FS");
     }
   }
   String htmlDataconf;        // Hold the HTML Code
@@ -662,7 +662,7 @@ String hextodec(String hex) {
 // **************************************************************************
 void Handle_tonuino(){
   if (httpServer.method() == HTTP_GET) {
-    DEBUG_PRINTLN("[0659] WEB: Connection established - /tonuino");
+    DEBUG_PRINTLN("[0665] WEB: Connection established - /tonuino");
 
     // Look for new cards
 
@@ -678,7 +678,7 @@ void Handle_tonuino(){
     }
 
     if (card == 0) {
-      DEBUG_PRINTLN("[0675] RFID: No card presented!");
+      DEBUG_PRINTLN("[0681] RFID: No card presented!");
       if (de_enabled) {
         sendControlPage("Keine Karte aufgelegt! Werte unten stammen nicht von einer Karte!", "Warnung!", 2, 200);
       }
@@ -693,15 +693,15 @@ void Handle_tonuino(){
       // Stop encryption on PCD
       mfrc522.PCD_StopCrypto1();
       if (de_enabled) {
-        sendControlPage("Werte (" + byteToHexString(dataBlock,sizeof(dataBlock)) + ") gelesen von Karte!", "Erfolg!", 1, 200);
+        sendControlPage("Werte (" + byteToHexString(dataBlock,sizeof(dataBlock)) + ") gelesen von Karte! UID: " + getchipcarduid(), "Erfolg!", 1, 200);
       }
       else {
-      sendControlPage("Values (" + byteToHexString(dataBlock,sizeof(dataBlock)) + ") read from a Card!", "Success!", 1, 200);
+      sendControlPage("Values (" + byteToHexString(dataBlock,sizeof(dataBlock)) + ") read from a Card! UID: " + getchipcarduid(), "Success!", 1, 200);
       }
     }  
   } 
   else {
-    DEBUG_PRINTLN("[0698] WEB: Connection established - /tonuino (write card)");
+    DEBUG_PRINTLN("[0704] WEB: Connection established - /tonuino (write card)");
     // generate the Tonuino MiFare sector 1 block 0
     strDataBlock = httpServer.arg(0);
     if (httpServer.arg(1).length() == 1) strDataBlock += "0";     // "1" -> "01"
@@ -812,7 +812,7 @@ void Handle_tonuino(){
     }
 
     if (card == 0) {
-      DEBUG_PRINTLN("[0809] RFID: No card presented!");
+      DEBUG_PRINTLN("[0815] RFID: No card presented!");
       if (de_enabled) {
         sendControlPage("Keine Karte aufgelegt!", "Fehler!", 3, 200);
       }
@@ -842,7 +842,7 @@ void sendControlPage(String message, String header, int type, int httpcode)
 {
   if (type == 1) {                                               // Type 1
 //    String message = "WEB: Neue Werte gesetzt über die control page: ";
-    String message = "[0839] WEB: Set new values using control page: ";
+    String message = "[0845] WEB: Set new values using control page: ";
     message += String(httpServer.args()) + "\n";
     for (int i = 0; i < httpServer.args(); i++) {
       message += "Arg " + (String)i + " -> ";
@@ -1273,18 +1273,18 @@ void writeblock(int sector, int block) {
     }
     status = (MFRC522::StatusCode) mfrc522.PCD_Authenticate(MFRC522::PICC_CMD_MF_AUTH_KEY_A, sector*4+3, &key, &(mfrc522.uid));
     if (status != MFRC522::STATUS_OK) {
-      DEBUG_PRINTLN("[1270] RFID: wrong write key");
+      DEBUG_PRINTLN("[1276] RFID: wrong write key");
       DEBUG_PRINTLN(mfrc522.GetStatusCodeName(status));
     }
     else {
-      DEBUG_PRINTLN("[1274] RFID: key accepted");
+      DEBUG_PRINTLN("[1280] RFID: key accepted");
       // Write data to the block
       status = (MFRC522::StatusCode) mfrc522.MIFARE_Write(sector*4+block, dataBlock, 16);
       if (status != MFRC522::STATUS_OK) {
-        DEBUG_PRINTLN("[1278] RFID: data can not be written");
+        DEBUG_PRINTLN("[1284] RFID: data can not be written");
       }
       else {
-        DEBUG_PRINTLN("[1281] RFID: data written");
+        DEBUG_PRINTLN("[1287] RFID: data written");
         break;
       }
     }
@@ -1307,7 +1307,7 @@ String byteToHexStringRange(byte* data, byte firstbyte, byte lastbyte)
     str[j * 2 + 1] = getHexDigit(digit);
     j++;
   }
-  DEBUG_PRINT("[1304] byteToHexStringRange: ");
+  DEBUG_PRINT("[1310] byteToHexStringRange: ");
   DEBUG_PRINTLN(str);
   return String(str);
 }
@@ -1426,7 +1426,7 @@ void setup(void){
   Serial.println(F("End setup"));
 
 
-  DEBUG_PRINTLN("[1423] configured pinModes");
+  DEBUG_PRINTLN("[1429] configured pinModes");
 
   WiFiManager wifiManager;
   if (digitalRead(CLEAR_BTN) == LOW) wifiManager.resetSettings();   // Clear WIFI data if CLEAR Button is pressed during boot
@@ -1435,15 +1435,15 @@ void setup(void){
   wifiManager.setSaveConfigCallback(saveConfigCallback);            // set config save notify callback
   
   if (SPIFFS.begin(true)) {                                         // Mounting File System, true because of formatOnFail
-    DEBUG_PRINTLN("[1432] mounted file system");
+    DEBUG_PRINTLN("[1438] mounted file system");
     if (!loadConfig()) {
-      DEBUG_PRINTLN("[1434] Failed to load config");
+      DEBUG_PRINTLN("[1440] Failed to load config");
     } else {
-      DEBUG_PRINTLN("[1436] Config loaded");
+      DEBUG_PRINTLN("[1442] Config loaded");
     }
   }
   else {
-    DEBUG_PRINTLN("[1440] failed to mount FS");
+    DEBUG_PRINTLN("[1446] failed to mount FS");
   }
 
   // if (host_name[0] == 0 ) sprintf(host_name, "IPC-%d",ESP.getChipId());     //set default hostname when not set!
@@ -1465,11 +1465,11 @@ void setup(void){
   strncpy(host_name, custom_hostname.getValue(), 20);
   strncpy(ntpserver, custom_ntpserver.getValue(), 30);
 
-  DEBUG_PRINTLN("[1462] WiFi connected! IP: " + ipToString(WiFi.localIP()) + " Hostname: " + String(host_name) + " NTP-Server: " + String(ntpserver));
+  DEBUG_PRINTLN("[1468] WiFi connected! IP: " + ipToString(WiFi.localIP()) + " Hostname: " + String(host_name) + " NTP-Server: " + String(ntpserver));
 
   // save the custom parameters to FS
   if (shouldSaveConfig) {
-    DEBUG_PRINTLN(" [1466] config...");
+    DEBUG_PRINTLN(" [1472] config...");
     DynamicJsonBuffer jsonBuffer;
     JsonObject& json = jsonBuffer.createObject();
     json["hostname"] = host_name;
@@ -1477,12 +1477,12 @@ void setup(void){
 
     File configFile = SPIFFS.open("/config.json", "w");
     if (!configFile) {
-      DEBUG_PRINTLN("[1474] SPI: failed to open config file for writing config");
+      DEBUG_PRINTLN("[1480] SPI: failed to open config file for writing config");
     }
     #ifdef DEBUG
       json.printTo(Serial);
     #endif
-    DEBUG_PRINTLN("[1479]");
+    DEBUG_PRINTLN("[1485]");
     json.printTo(configFile);
     configFile.close();
   }
@@ -1493,7 +1493,7 @@ void setup(void){
   
   // Enable the Free Memory Page
   httpServer.on("/freemem", []() {
-    DEBUG_PRINTLN("[1490] WEB: Connection established: /freemem : ");
+    DEBUG_PRINTLN("[1496] WEB: Connection established: /freemem : ");
     DEBUG_PRINT(ESP.getFreeSketchSpace());
     httpServer.sendHeader("Connection", "close");
     httpServer.send(200, "text/plain", String(ESP.getFreeSketchSpace()).c_str());
@@ -1537,7 +1537,7 @@ void setup(void){
       }
       // Serial.setDebugOutput(false);
     } else {
-      DEBUG_PRINTLN("[1534] Update Failed Unexpectedly (likely broken connection)");
+      DEBUG_PRINTLN("[1540] Update Failed Unexpectedly (likely broken connection)");
     }
   });
     
@@ -1545,11 +1545,11 @@ void setup(void){
   
   // setTime(1514764800);  // 1.1.2018 00:00 Initialize time
   if (ntp_enabled) {
-      DEBUG_PRINTLN("[1542] NTP: Starting UDP");
+      DEBUG_PRINTLN("[1548] NTP: Starting UDP");
       Udp.begin(NtpLocalPort);
-      DEBUG_PRINT("[1544] NTP: Local port: ");
+      DEBUG_PRINT("[1550] NTP: Local port: ");
       // DEBUG_PRINTLN(Udp.localPort());
-      DEBUG_PRINTLN("[1546] NTP: waiting for sync");
+      DEBUG_PRINTLN("[1552] NTP: waiting for sync");
       setSyncProvider(getNtpTime);                       // set the external time provider
       setSyncInterval(3600);                             // set the number of seconds between re-sync
       // String boottimetemp = printDigits2(hour()) + ":" + printDigits2(minute()) + " " + printDigits2(day()) + "." + printDigits2(month()) + "." + String(year());
@@ -1559,7 +1559,7 @@ void setup(void){
   mfrc522.PCD_Init();   // Init MFRC522
   delay(4);             // Wait for MFRC522 Board
 
-  DEBUG_PRINTLN("[1556] Startup completed ...");
+  DEBUG_PRINTLN("[1562] Startup completed ...");
 }
 
 
